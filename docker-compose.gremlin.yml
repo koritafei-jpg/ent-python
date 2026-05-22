@@ -1,0 +1,7 @@
+services:
+  gremlin-server:
+    image: tinkerpop/gremlin-server:3.7.2
+    ports:
+      - "8182:8182"
+    environment:
+      GREMLIN_SERVER_EVALUATION_TIMEOUT: 30000

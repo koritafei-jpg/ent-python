@@ -1,0 +1,120 @@
+"""异步运行时 Client。"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from entpy.dialect.sqlalchemy.async_driver import AsyncSQLAlchemyDriver
+from entpy.dialect.sqlalchemy.metadata import build_metadata
+from entpy.dialect.sqlalchemy.migrate import create_schema
+from entpy.ir.policies import collect_hooks, collect_interceptors, collect_policies
+from entpy.runtime.builders_async import (
+    AsyncCreateBuilder,
+    AsyncDeleteBuilder,
+    AsyncQueryBuilder,
+    AsyncUpdateBuilder,
+)
+from entpy.runtime.client import NodeClient, _snake
+from entpy.runtime.registry import Registry
+from entpy.runtime.spec_helpers import create_spec, update_spec
+from entpy.schema.base import Schema
+from entpy.runtime.predicate import PredicateFactory
+
+
+class AsyncClient:
+    def __init__(
+        self,
+        driver: Any,
+        registry: Registry,
+        *,
+        hooks: list | None = None,
+        interceptors: list | None = None,
+        policies: list | None = None,
+        ctx: dict[str, Any] | None = None,
+    ) -> None:
+        self._driver = driver
+        self._registry = registry
+        self._hooks = hooks or []
+        self._interceptors = interceptors or []
+        self._policies = policies or []
+        self._ctx = ctx if ctx is not None else {}
+
+    async def migrate(self) -> None:
+        """根据 Schema 图创建数据库表（DDL）。"""
+        if self._registry.storage == "gremlin":
+            return
+        meta, _ = build_metadata(self._registry.graph)
+
+        async def _run(conn):
+            await conn.run_sync(lambda sync_conn: meta.create_all(bind=sync_conn))
+
+        async with self._driver.engine.begin() as conn:
+            if self._driver.dialect() == "postgresql":
+                from sqlalchemy import text
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            await _run(conn)
+
+    @classmethod
+    def open(
+        cls,
+        dsn: str,
+        *,
+        schemas: list[type[Schema]],
+        storage: str = "sql",
+        ctx: dict[str, Any] | None = None,
+        **engine_kw: Any,
+    ) -> AsyncClient:
+        registry = Registry.from_schemas(schemas, storage=storage)
+        driver: Any
+        if storage == "gremlin":
+            from entpy.dialect.gremlin.driver import GremlinDriver
+
+            driver = GremlinDriver.from_url(dsn, registry=registry)
+        else:
+            driver = AsyncSQLAlchemyDriver.from_url(dsn, **engine_kw)
+        return cls(
+            driver,
+            registry,
+            hooks=collect_hooks(schemas),
+            interceptors=collect_interceptors(schemas),
+            policies=collect_policies(schemas),
+            ctx=ctx,
+        )
+
+    def F(self, schema: type[Schema]) -> PredicateFactory:
+        return self._registry.F(schema)
+
+    def create(self, schema: type[Schema], /, **fields: Any) -> AsyncCreateBuilder:
+        return AsyncCreateBuilder(self, schema, fields)
+
+    def query(self, schema: type[Schema]) -> AsyncQueryBuilder:
+        return AsyncQueryBuilder(self, schema)
+
+    def update(self, schema: type[Schema], id: int) -> AsyncUpdateBuilder:
+        return AsyncUpdateBuilder(self, schema, id)
+
+    def delete(self, schema: type[Schema]) -> AsyncDeleteBuilder:
+        return AsyncDeleteBuilder(self, schema)
+
+    def __getattr__(self, name: str) -> _AsyncNodeClient:
+        for schema in self._registry.nodes:
+            if _snake(schema.type_name()) == name:
+                return _AsyncNodeClient(self, schema)
+        raise AttributeError(name)
+
+class _AsyncNodeClient:
+    def __init__(self, client: AsyncClient, schema: type[Schema]) -> None:
+        self._client = client
+        self._schema = schema
+
+    def create(self, /, **fields: Any) -> AsyncCreateBuilder:
+        return self._client.create(self._schema, **fields)
+
+    def query(self) -> AsyncQueryBuilder:
+        return self._client.query(self._schema)
+
+    def update(self, id: int) -> AsyncUpdateBuilder:
+        return self._client.update(self._schema, id)
+
+    def delete(self) -> AsyncDeleteBuilder:
+        return self._client.delete(self._schema)

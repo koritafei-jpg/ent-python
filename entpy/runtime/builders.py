@@ -1,0 +1,238 @@
+"""Create / Query / Update / Delete 构建器。"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from entpy.dialect.sqlalchemy import sqlgraph
+from entpy.dialect.sqlalchemy.spec import CreateSpec, DeleteSpec, QuerySpec, UpdateSpec
+from entpy.entql.filter import entql_to_predicates
+
+
+def _is_gremlin(client: Any) -> bool:
+    return client._driver.dialect() == "gremlin"
+
+from entpy.schema.base import Schema, View
+from entpy.runtime.entity import Entity
+from entpy.runtime.errors import NotFoundError
+from entpy.runtime.hook import chain_hooks
+from entpy.runtime.interceptor import QueryRequest, chain_interceptors
+from entpy.runtime.mutation import Mutation, Op
+from entpy.privacy.policy import eval_mutation, eval_query
+from entpy.runtime.predicate import Predicate
+from entpy.runtime.spec_helpers import create_spec, update_spec  # noqa: F401
+
+
+class CreateBuilder:
+    def __init__(self, client: Any, schema: type[Schema], initial: dict[str, Any] | None = None) -> None:
+        if issubclass(schema, View):
+            raise TypeError(f"{schema.type_name()} is a View")
+        self._client = client
+        self._schema = schema
+        self._fields: dict[str, Any] = dict(initial or {})
+        self._edges: dict[str, list[Any]] = {}
+
+    def set(self, name: str, value: Any) -> CreateBuilder:
+        self._fields[name] = value
+        return self
+
+    def add(self, edge: str, *ids: int) -> CreateBuilder:
+        self._edges.setdefault(edge, []).extend(ids)
+        return self
+
+    def _validate_fields(self) -> None:
+        from entpy.schema.field import FieldType
+
+        node = self._client._registry.node_for(self._schema)
+        for f in node.fields:
+            if f.name not in self._fields and f.default is not None:
+                self._fields[f.name] = f.default
+            if f.name not in self._fields and f.default_func:
+                self._fields[f.name] = f.default_func()
+            for v in f.validators:
+                v(self._fields.get(f.name))
+            if f.typ == FieldType.VECTOR and f.name in self._fields:
+                val = self._fields[f.name]
+                if isinstance(val, list) and self._client._driver.dialect() == "sqlite":
+                    self._fields[f.name] = json.dumps(val)
+
+    def save(self) -> Entity:
+        self._validate_fields()
+        mutation = Mutation(self._schema, Op.CREATE, fields=dict(self._fields), edges=dict(self._edges))
+        mutation = chain_hooks(self._client._hooks, mutation)
+        self._fields.update(mutation.fields)
+        eval_mutation(self._client._ctx, self._client._policies, mutation)
+        spec = create_spec(self._client._registry, self._schema, self._fields, self._edges)
+        with self._client._driver.session() as session:
+            if _is_gremlin(self._client):
+                from entpy.dialect.gremlin import graph_ops
+
+                row_id = graph_ops.create_node(
+                    session.g, self._client._registry, spec
+                )
+            else:
+                row_id = sqlgraph.create_node(
+                    session, self._client._registry.tables, spec
+                )
+        return Entity(self._schema, {**self._fields, "id": row_id}, self._client)
+
+
+class QueryBuilder:
+    def __init__(self, client: Any, schema: type[Schema]) -> None:
+        self._client = client
+        self._schema = schema
+        self._predicates: list[Predicate] = []
+        self._limit: int | None = None
+        self._with: list[str] = []
+
+    def where(self, *preds: Predicate) -> QueryBuilder:
+        self._predicates.extend(preds)
+        return self
+
+    def entql(self, filter_obj: dict) -> QueryBuilder:
+        self._predicates.extend(entql_to_predicates(self._client.F(self._schema), filter_obj))
+        return self
+
+    def limit(self, n: int) -> QueryBuilder:
+        self._limit = n
+        return self
+
+    def with_(self, *edges: str) -> QueryBuilder:
+        self._with.extend(edges)
+        return self
+
+    def _run_query(self, request: QueryRequest) -> list[dict]:
+        label = self._client._registry.label_for(request.schema)
+
+        def execute(req: QueryRequest) -> list[dict]:
+            effective_limit = req.limit if req.limit is not None else self._limit
+            with_edges = req.with_edges if req.with_edges else list(self._with)
+            with self._client._driver.session() as session:
+                if _is_gremlin(self._client):
+                    from entpy.dialect.gremlin import graph_ops
+
+                    spec = QuerySpec(
+                        table=label,
+                        limit=effective_limit,
+                        with_edges=with_edges,
+                    )
+                    return graph_ops.query_nodes(
+                        session.g,
+                        self._client._registry,
+                        spec,
+                        gremlin_preds=list(self._predicates),
+                    )
+                table = self._client._registry.table_for(request.schema)
+                sql_preds = [p.apply(table) for p in self._predicates]
+                spec = QuerySpec(
+                    table=table.name,
+                    predicates=sql_preds,
+                    limit=effective_limit,
+                    with_edges=with_edges,
+                )
+                return sqlgraph.query_nodes(
+                    session, self._client._registry.tables, spec
+                )
+
+        if self._client._interceptors:
+            return chain_interceptors(self._client._interceptors, execute, request)
+        return execute(request)
+
+    def all(self) -> list[Entity]:
+        request = QueryRequest(
+            schema=self._schema,
+            limit=self._limit,
+            with_edges=list(self._with),
+        )
+        eval_query(self._client._ctx, self._client._policies, request)
+        rows = self._run_query(request)
+        return [Entity(self._schema, r, self._client) for r in rows]
+
+    def only(self) -> Entity:
+        rows = self.limit(2).all()
+        if not rows:
+            raise NotFoundError(f"{self._schema.type_name()}: not found")
+        if len(rows) > 1:
+            raise NotFoundError(f"{self._schema.type_name()}: not unique")
+        return rows[0]
+
+    def first(self) -> Entity | None:
+        rows = self.limit(1).all()
+        return rows[0] if rows else None
+
+
+class UpdateBuilder:
+    def __init__(self, client: Any, schema: type[Schema], id: int) -> None:
+        if issubclass(schema, View):
+            raise TypeError(f"{schema.type_name()} is a View")
+        self._client = client
+        self._schema = schema
+        self._id = id
+        self._fields: dict[str, Any] = {}
+        self._edges: dict[str, list[Any]] = {}
+
+    def set(self, name: str, value: Any) -> UpdateBuilder:
+        self._fields[name] = value
+        return self
+
+    def add(self, edge: str, *ids: int) -> UpdateBuilder:
+        self._edges.setdefault(edge, []).extend(ids)
+        return self
+
+    def save(self) -> Entity:
+        mutation = Mutation(
+            self._schema, Op.UPDATE_ONE, id=self._id, fields=self._fields, edges=self._edges
+        )
+        mutation = chain_hooks(self._client._hooks, mutation)
+        eval_mutation(self._client._ctx, self._client._policies, mutation)
+        spec = update_spec(self._client._registry, self._schema, self._id, self._fields, self._edges)
+        with self._client._driver.session() as session:
+            if _is_gremlin(self._client):
+                from entpy.dialect.gremlin import graph_ops
+
+                graph_ops.update_node(session.g, self._client._registry, spec)
+            else:
+                sqlgraph.update_node(session, self._client._registry.tables, spec)
+        return self._client.query(self._schema).where(
+            self._client.F(self._schema).id.eq(self._id)
+        ).only()
+
+
+class DeleteBuilder:
+    def __init__(self, client: Any, schema: type[Schema]) -> None:
+        if issubclass(schema, View):
+            raise TypeError(f"{schema.type_name()} is a View")
+        self._client = client
+        self._schema = schema
+        self._ids: list[int] = []
+        self._predicates: list[Predicate] = []
+
+    def where(self, *preds: Predicate) -> DeleteBuilder:
+        self._predicates.extend(preds)
+        return self
+
+    def one(self, id: int) -> DeleteBuilder:
+        self._ids = [id]
+        return self
+
+    def execute(self) -> int:
+        label = self._client._registry.label_for(self._schema)
+        if self._predicates and not self._ids:
+            rows = self._client.query(self._schema).where(*self._predicates).all()
+            self._ids = [r.id for r in rows]
+        if not self._ids and not self._predicates:
+            raise ValueError("delete requires one(id) or where")
+        mutation = Mutation(self._schema, Op.DELETE, id=self._ids[0] if len(self._ids) == 1 else None)
+        eval_mutation(self._client._ctx, self._client._policies, mutation)
+        with self._client._driver.session() as session:
+            if _is_gremlin(self._client):
+                from entpy.dialect.gremlin import graph_ops
+
+                preds = list(self._predicates) if not self._ids else []
+                spec = DeleteSpec(table=label, ids=self._ids, predicates=preds)
+                return graph_ops.delete_nodes(session.g, self._client._registry, spec)
+            table = self._client._registry.table_for(self._schema)
+            sql_preds = [p.apply(table) for p in self._predicates] if not self._ids else []
+            spec = DeleteSpec(table=table.name, ids=self._ids, predicates=sql_preds)
+            return sqlgraph.delete_nodes(session, self._client._registry.tables, spec)

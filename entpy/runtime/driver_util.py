@@ -12,6 +12,12 @@ def is_async_sql_driver(client: Any) -> bool:
     return isinstance(client._driver, AsyncSQLAlchemyDriver)
 
 
+def is_async_client(client: Any) -> bool:
+    from entpy.runtime.async_client import AsyncClient
+
+    return isinstance(client, AsyncClient)
+
+
 @contextmanager
 def sync_sql_session(client: Any) -> Iterator[Any]:
     """检索等同步 API 用的 ORM session（AsyncClient 走 sync_engine）。"""

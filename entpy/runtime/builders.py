@@ -34,6 +34,21 @@ def _is_gremlin(client: Any) -> bool:
     return client._driver.dialect() == "gremlin"
 
 
+def _is_noop_update(fields: dict[str, Any], edges: dict[str, list[Any]]) -> bool:
+    return not fields and not any(edges.values())
+
+
+def _load_existing_entity(client: Any, schema: type[Schema], row_id: Any) -> Entity:
+    existing = (
+        client.query(schema)
+        .where(client.F(schema).id.eq(row_id))
+        .first()
+    )
+    if existing is None:
+        raise NotFoundError(f"{schema.type_name()}: not found")
+    return existing
+
+
 class CreateBuilder:
     def __init__(self, client: Any, schema: type[Schema], initial: dict[str, Any] | None = None) -> None:
         if issubclass(schema, View):
@@ -209,6 +224,8 @@ class UpdateBuilder:
         from entpy.active.context import get_effective_ctx
 
         eval_mutation(get_effective_ctx(self._client), self._client._policies, mutation)
+        if _is_noop_update(self._fields, self._edges):
+            return _load_existing_entity(self._client, self._schema, self._id)
         spec = update_spec(self._client._registry, self._schema, self._id, self._fields, self._edges)
         with self._client._driver.session() as session:
             if _is_gremlin(self._client):

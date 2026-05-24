@@ -235,9 +235,15 @@ async def async_bind_client(
 
 def migrate() -> None:
     """DDL：为当前同步 bind 建表。"""
-    from entpy.active.context import get_client
+    from entpy.active.context import get_bound_client
+    from entpy.runtime.client import Client
 
-    get_client().migrate()
+    client = get_bound_client()
+    if not isinstance(client, Client):
+        raise RuntimeError(
+            "migrate() 需要 with bind(...)；async_bind 请使用 await migrate_async()"
+        )
+    client.migrate()
 
 
 async def migrate_async() -> None:

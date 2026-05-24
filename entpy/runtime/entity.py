@@ -66,11 +66,11 @@ class Entity:
 
         同步 bind 下 ``.all()`` 为同步；async_bind 下请 ``await .all()``。
         """
-        from entpy.runtime.driver_util import is_async_sql_driver
+        from entpy.runtime.driver_util import is_async_client
         from entpy.runtime.traverse import AsyncTraverseChain, TraverseChain
 
         client = self._require_client()
-        if is_async_sql_driver(client):
+        if is_async_client(client):
             return AsyncTraverseChain(client, self, [edge_name])
         return TraverseChain(client, self, [edge_name])
 

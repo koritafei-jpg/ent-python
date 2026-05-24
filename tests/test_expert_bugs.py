@@ -298,6 +298,48 @@ def test_active_schema_raises_under_async_bind_only():
     asyncio.run(run())
 
 
+def test_empty_update_is_noop_without_on_save():
+    from entpy.observer import Observer
+    from entpy.observer.registry import get_observer_registry
+
+    class UObs(Observer):
+        def __init__(self, st):
+            super().__init__(st)
+            self.saves = 0
+
+        def on_save(self, mutation: Mutation) -> None:
+            self.saves += 1
+
+    reg = get_observer_registry()
+    reg.register(User, UObs)
+    try:
+        with bind("sqlite:///:memory:", schemas=SCHEMAS):
+            migrate()
+            u = User.create(name="a", age=1)
+            client = get_client()
+            obs = client._observers[0]
+            obs.saves = 0
+            row = client.update(User, u.id).save()
+            assert row.name == "a"
+            assert obs.saves == 0
+    finally:
+        reg._by_schema.pop(User, None)
+
+
+def test_migrate_rejects_async_bind_only():
+    import asyncio
+
+    async def run():
+        from entpy.active import async_bind, migrate, migrate_async
+
+        async with async_bind("sqlite+aiosqlite:///:memory:", schemas=SCHEMAS):
+            with pytest.raises(RuntimeError, match="migrate_async"):
+                migrate()
+            await migrate_async()
+
+    asyncio.run(run())
+
+
 def test_entql_or_has_gremlin_fn():
     from entpy.entql.filter import entql_to_predicates
     from entpy.runtime import Client

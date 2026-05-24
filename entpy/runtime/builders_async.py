@@ -9,7 +9,13 @@ from entpy.dialect.sqlalchemy.spec import DeleteSpec
 from entpy.entql.filter import entql_to_predicates
 from entpy.observer.hooks import notify_after_observers
 from entpy.privacy.policy import eval_mutation, eval_query
-from entpy.runtime.builders import CreateBuilder, UpdateBuilder, _is_gremlin
+from entpy.runtime.builders import (
+    CreateBuilder,
+    UpdateBuilder,
+    _is_gremlin,
+    _is_noop_update,
+    _load_existing_entity,
+)
 from entpy.runtime.entity import Entity
 from entpy.runtime.errors import NotFoundError
 from entpy.runtime.hook import chain_hooks_async
@@ -84,6 +90,8 @@ class AsyncUpdateBuilder(UpdateBuilder):
         from entpy.active.context import get_effective_ctx
 
         eval_mutation(get_effective_ctx(self._client), self._client._policies, mutation)
+        if _is_noop_update(self._fields, self._edges):
+            return _load_existing_entity(self._client, self._schema, self._id)
         spec = update_spec(self._client._registry, self._schema, self._id, self._fields, self._edges)
         if _is_gremlin(self._client):
             from entpy.dialect.gremlin import graph_ops

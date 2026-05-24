@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from entpy.active.context import get_client
+from entpy.active.context import get_bound_client
 
 
 def ensure_connection() -> None:
     """确保 Gremlin 远程连接已建立。"""
-    client = get_client()
+    client = get_bound_client()
     if client._registry.storage != "gremlin":
         raise RuntimeError("ensure_connection() 仅用于 storage='gremlin'")
     client._driver._ensure()
@@ -15,7 +15,7 @@ def ensure_connection() -> None:
 
 def clear_graph(*labels: str) -> None:
     """按顶点标签清空图（仅 Gremlin 存储）。"""
-    client = get_client()
+    client = get_bound_client()
     if client._registry.storage != "gremlin":
         raise RuntimeError("clear_graph() 仅用于 storage='gremlin'")
     from entpy.dialect.gremlin import graph_ops

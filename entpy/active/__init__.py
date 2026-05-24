@@ -18,7 +18,12 @@ from entpy.runtime.connect import (
     register_connection_hook,
     resolve_connection,
 )
-from entpy.active.context import get_async_client, get_bound_client, get_client
+from entpy.active.context import (
+    get_async_client,
+    get_bound_client,
+    get_client,
+    reject_async_module_api,
+)
 from entpy.active.entity import ActiveEntity
 from entpy.active.gremlin import clear_graph, ensure_connection
 from entpy.active.schema import ActiveSchema
@@ -37,11 +42,13 @@ def search(schema: type[Schema]):
 
 def traverse(entity, edge: str | None = None):
     """边遍历（兼容写法）；推荐 ``entity.out('edge').out('edge').all()``。"""
+    reject_async_module_api("traverse")
     return get_bound_client().traverse(entity, edge)
 
 
 def update(schema: type[Schema], id: int):
     """更新已有行（例如关联边）。"""
+    reject_async_module_api("update")
     return get_bound_client().update(schema, id)
 
 

@@ -26,15 +26,26 @@ def entql_to_predicates(
         if key == "or":
             from sqlalchemy import or_
 
-            parts = []
+            parts: list[Predicate] = []
             for sub in value:
-                for p in entql_to_predicates(F, sub):
-                    parts.append(p)
+                parts.extend(entql_to_predicates(F, sub))
             if parts:
                 def combined(t):
                     return or_(*[p.apply(t) for p in parts])
 
-                preds.append(Predicate(combined))
+                def combined_gremlin(t):
+                    from gremlinpython.process.traversal import __
+
+                    branches = []
+                    for p in parts:
+                        if p._gremlin_fn is None:
+                            raise RuntimeError(
+                                "entql or(): predicate has no gremlin implementation"
+                            )
+                        branches.append(p.apply_gremlin(__))
+                    return t.or_(*branches)
+
+                preds.append(Predicate(combined, combined_gremlin))
             continue
         ref = getattr(F, key)
         if isinstance(value, dict):

@@ -166,15 +166,17 @@ def open_demo_client(
         )
     cfg = config if config is not None else config_file("sqlite-memory.json")
     if isinstance(cfg, str):
-        merged = load_config(cfg)
-    else:
-        merged = dict(cfg)
+        return resolve_connection(
+            ConnectRequest(
+                schemas=schemas,
+                config_path=cfg,
+                runtime_hooks=hooks,
+            )
+        )
     return resolve_connection(
         ConnectRequest(
             schemas=schemas,
-            config=merged,
-            dsn=merged.get("dsn"),
-            storage=str(merged.get("storage", "sql")),
+            config=dict(cfg),
             runtime_hooks=hooks,
         )
     )

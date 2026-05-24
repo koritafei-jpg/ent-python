@@ -298,6 +298,40 @@ def test_active_schema_raises_under_async_bind_only():
     asyncio.run(run())
 
 
+def test_entql_or_has_gremlin_fn():
+    from entpy.entql.filter import entql_to_predicates
+    from entpy.runtime import Client
+
+    client = Client.open("sqlite:///:memory:", schemas=SCHEMAS)
+    try:
+        preds = entql_to_predicates(
+            client.F(User), {"or": [{"name": "a"}, {"age": {"gt": 1}}]}
+        )
+        assert len(preds) == 1
+        assert preds[0]._gremlin_fn is not None
+        client.migrate()
+        client.create(User, name="a", age=10).save()
+        client.create(User, name="b", age=2).save()
+        rows = client.query(User).where(preds[0]).all()
+        assert {r.name for r in rows} == {"a", "b"}
+    finally:
+        client.close()
+
+
+@pytest.mark.asyncio
+async def test_traverse_update_module_api_rejects_async_bind():
+    from entpy.active import async_bind, migrate_async, traverse, update
+    from entpy.active.context import get_async_client
+
+    async with async_bind("sqlite+aiosqlite:///:memory:", schemas=SCHEMAS):
+        await migrate_async()
+        u = await get_async_client().create(User, name="a", age=1).save()
+        with pytest.raises(RuntimeError, match="traverse"):
+            traverse(u)
+        with pytest.raises(RuntimeError, match="update"):
+            update(User, u.id)
+
+
 @pytest.mark.asyncio
 async def test_search_and_f_work_under_async_bind():
     from entpy.active import async_bind, F, migrate_async, search

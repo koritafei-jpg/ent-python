@@ -79,6 +79,17 @@ def require_sync_client() -> Any:
     return client
 
 
+def reject_async_module_api(api: str) -> None:
+    """``traverse()`` / ``update()`` 等模块级同步辅助在 async_bind 下不可用。"""
+    from entpy.runtime.async_client import AsyncClient
+
+    client = get_bound_client()
+    if isinstance(client, AsyncClient):
+        raise RuntimeError(
+            f"{api}() 为同步 API，async_bind 下请使用 get_async_client().{api.lstrip('_')}()"
+        )
+
+
 def get_bound_client() -> Any:
     """返回当前 bind 的同步或异步 Client（供 F() 等使用）。"""
     sync_client = _client_var.get()

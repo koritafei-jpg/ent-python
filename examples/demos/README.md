@@ -2,6 +2,8 @@
 
 本目录包含 5 类可运行示例，展示 entpy 在关系库、全文/向量检索与图存储上的用法。所有 demo 统一通过 **`demo_bind` / `demo_bind_gremlin`**（连接钩子 + JSON 配置）绑定 **ActiveSchema**，业务代码无需显式 `Client.open()` 或硬编码 DSN。
 
+**推荐先读** [docs/QUICKSTART.md](../../docs/QUICKSTART.md)（心智模型、边语义、`edit` / `link` / `set_links`）。各子目录另有 `USAGE.md`。
+
 ## 目录结构
 
 ```
@@ -43,10 +45,9 @@ examples/demos/
 
 ## 环境
 
-在 `python` 目录下安装依赖后运行：
+在仓库根目录 `ent-python/` 安装依赖后运行：
 
 ```bash
-cd python
 pip install -e ".[dev,search,gremlin]"
 ```
 
@@ -78,7 +79,7 @@ python -m examples.demos.gremlin.demo
 ## 通用 API 模板
 
 ```python
-from entpy.active import migrate, F, search, traverse, update
+from entpy.active import migrate, F, search
 from examples.demos.common.connect import demo_bind
 
 with demo_bind(SCHEMAS):
@@ -87,10 +88,21 @@ with demo_bind(SCHEMAS):
     rows = User.query(status="ok").all()           # 等值查询
     one = User.get(name="Alice")                   # 单条
     rows = User.query().where(F(User).age.gt(18)).all()  # 复杂条件
+    row.field = "x"; row.save()                    # 脏字段更新
+    row.edit().set("field", "y").save()            # 显式更新
+    user.link("knows", friend_id)                  # 追加边（Gremlin / 有边 Schema）
     sb = search(Document)                          # 检索
     hits = sb.bm25_sync("query", top_k=5)
     friends = user.out("knows").all()              # 边 / 多跳
 ```
+
+| 写操作 | 说明 |
+|--------|------|
+| `row.save()` | 仅提交脏字段 |
+| `row.edit().set(...).save()` | 显式字段更新 Builder |
+| `row.link(edge, *ids)` | 追加边（M2M 幂等；O2M 绑定 FK） |
+| `row.set_links(edge, *ids)` | 仅 M2M：保存后边集合恰好为给定 id |
+| `User.query(...).with_("edge").only()` | 预加载边；`link` 后缓存失效，属性边与 `out()` 一致 |
 
 实体需继承 **`BaseSchema`**（通用字段）+ **`ActiveSchema`**（`bind` 上下文 API）：
 
@@ -136,7 +148,7 @@ class User(ActiveSchema, BaseSchema):
 
 **模型：** `Author` → `Article`（`author_id`）→ `Comment`（`article_id`）
 
-**覆盖能力：** 简单查询、谓词 `F()`、EntQL、子表查询、跨表 `IN` 过滤
+**覆盖能力：** 简单查询、谓词 `F()`、EntQL、子表查询、跨表 `IN` 过滤、**`save()` / `edit()` 字段更新**
 
 ```python
 from entpy.active import migrate, F
@@ -146,20 +158,19 @@ from examples.demos.relational.seed import seed
 
 with demo_bind(SCHEMAS):
     migrate()
-    seed()
+    ids = seed()
 
     Article.query(status="published").all()
-
-    ids = seed()
     Article.query(status="published").where(F(Article).author_id.eq(ids["author_us"])).all()
-
     Article.query().entql({"status": "published"}).all()
 
     art = Article.get(title="entpy SQL guide")
     Comment.query(article_id=art.id).where(F(Comment).rating.gt(4)).all()
 
-    us_ids = [a.id for a in Author.query(region="US").all()]
-    Article.query(status="published").where(F(Article).author_id.in_(us_ids)).all()
+    draft = Article.get(title="Draft notes")
+    draft.status = "published"
+    draft.save()
+    art.edit().set("body", art.body + " (updated)").save()
 ```
 
 ---
@@ -189,6 +200,10 @@ with demo_bind(SEARCH_SCHEMAS):
 
     doc = Document.get(id=hits[0].id)
     Section.query(document_id=doc.id).all()
+
+    doc = Document.get(title="entpy SQL runtime")
+    doc.lang = "en"
+    doc.save()
 ```
 
 ---
@@ -215,6 +230,9 @@ with demo_bind(SEARCH_SCHEMAS):
 
     raw = sb.semantic_sync("graph traversal", embedder=emb, top_k=10)
     filter_hits(Document, raw, lang="en", category="tech")
+
+    doc = Document.get(title="entpy SQL runtime")
+    doc.edit().set("lang", "en").save()
 ```
 
 ---
@@ -261,7 +279,7 @@ with demo_bind(SEARCH_SCHEMAS):
 边标签规则：`{owner}_{edge_name}`，例如 `person_knows`。
 
 ```python
-from entpy.active import F, traverse, clear_graph, ensure_connection
+from entpy.active import F, clear_graph, ensure_connection
 from examples.demos.common.connect import demo_bind_gremlin
 from examples.demos.gremlin.models import Comment, Person, Post, GREMLIN_SCHEMAS
 from examples.demos.gremlin.seed import seed
@@ -269,17 +287,15 @@ from examples.demos.gremlin.seed import seed
 with demo_bind_gremlin(GREMLIN_SCHEMAS):
     ensure_connection()
     clear_graph("persons", "posts", "comments")
-    seed()
-
-    Person.query(city="NYC").all()
+    seed()  # alice.link("knows", bob.id)
 
     alice = Person.get(name="Alice")
-    alice.out("knows").all()                                    # 单跳
-    alice.out("knows").values("name").all()                     # 多跳 + 投影
-    alice.out("knows").out("knows").values("name").all()        # 两跳
+    alice.out("knows").all()
+    alice.link("knows", dave_id)
 
-    friend_ids = alice.out("knows").ids()
-    Post.query().where(F(Post).author_id.in_(friend_ids)).all()
+    row = Person.query(id=alice.id).with_("knows").only()
+    row.link("knows", eve_id)
+    row.knows  # 与 row.out("knows").all() 一致（link 后缓存失效）
 ```
 
 Gremlin 存储不支持 `migrate()`、BM25/向量检索；多跳 2 跳及以上且无 `where` 时在服务端一次 `out` 链执行。

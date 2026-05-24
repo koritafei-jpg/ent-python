@@ -47,8 +47,8 @@ with bind("sqlite:///:memory:", schemas=SCHEMAS):
 | 按条件查 | `User.query(name="a").all()` 或 `.where(F(User).age.gt(1))` |
 | 单条 | `User.get(id=uuid)` |
 | 改字段 | `u.name = "x"; u.save()` |
-| 改边（追加） | `u.link("groups", group_id)` 或 `u.edit().add("groups", gid).save()` |
-| M2M 边整表替换 | `u.set_links("groups", g1, g2)` 或 `u.edit().set_edges("groups", g1).save()` |
+| 改边（追加） | `u.link("groups", group_id)` 或 `u.edit().add("groups", gid).save()`（会一并提交未 `save()` 的脏字段） |
+| M2M 边整表替换 | `u.set_links("groups", g1, g2)` 或 `u.edit().set_edges("groups", g1).save()`（同上） |
 | 删行 | `u.delete()` |
 | 走边 | `u.out("groups").all()` |
 | 多跳 | `u.out("knows").out("knows").all()` |

@@ -118,6 +118,25 @@ class ActiveEntity(Entity):
         else:
             self._edges.clear()
 
+    def _merge_dirty_into_builder(self, builder: Any) -> None:
+        """将未 ``save()`` 的脏字段写入 UpdateBuilder（``edit`` / ``link`` 共用）。"""
+        self._mark_json_dirty_fields()
+        if not self._dirty:
+            return
+        client = self._client
+        if client is None:
+            client = get_async_client() if self._async else None
+            if client is None:
+                from entpy.active.context import require_sync_client
+
+                client = require_sync_client()
+        from entpy.runtime.validation import reject_immutable_updates
+
+        pending = {name: self._data[name] for name in self._dirty if name in self._data}
+        reject_immutable_updates(client._registry, self._schema, pending)
+        for name, value in pending.items():
+            builder.set(name, value)
+
     def save(self) -> ActiveEntity:
         if self._async:
             raise RuntimeError("use await entity.persist() inside async_bind")
@@ -192,39 +211,40 @@ class ActiveEntity(Entity):
         await client.delete(self._schema).one(self.id).execute()
 
     def edit(self) -> Any:
-        """返回本行的 Update 构建器。
+        """返回绑定的 Update 构建器；``save()`` 会一并提交脏字段。
 
         同步：``u.edit().set("age", 2).save()`` / ``u.edit().add("groups", g.id).save()``
         异步：``await u.edit().set_edges("groups", g.id).save()``
         """
+        from entpy.active.bound_update import BoundAsyncUpdateBuilder, BoundUpdateBuilder
+
         if self._new or self.id is None:
             raise ValueError("cannot edit unsaved entity; use save() first")
         if self._async:
             client = self._client or get_async_client()
-        else:
-            from entpy.active.context import require_sync_client
+            inner = client.update(self._schema, self.id)
+            return BoundAsyncUpdateBuilder(self, inner)
+        from entpy.active.context import require_sync_client
 
-            client = self._client or require_sync_client()
-        return client.update(self._schema, self.id)
+        client = self._client or require_sync_client()
+        return BoundUpdateBuilder(self, client.update(self._schema, self.id))
 
     def link(self, edge: str, *peer_ids: Any) -> ActiveEntity:
-        """追加边关联（等价 ``edit().add(edge, *peer_ids).save()``）。"""
+        """追加边关联（等价 ``edit().add(edge, *peer_ids).save()``，含脏字段）。"""
         if self._async:
             raise RuntimeError(
                 "inside async_bind use: await entity.edit().add(edge, *ids).save()"
             )
-        self._apply_persisted_row(self.edit().add(edge, *peer_ids).save(), edge=edge)
+        self.edit().add(edge, *peer_ids).save()
         return self
 
     def set_links(self, edge: str, *peer_ids: Any) -> ActiveEntity:
-        """M2M 边全量替换（等价 ``edit().set_edges(edge, *peer_ids).save()``）。"""
+        """M2M 边全量替换（等价 ``edit().set_edges(...).save()``，含脏字段）。"""
         if self._async:
             raise RuntimeError(
                 "inside async_bind use: await entity.edit().set_edges(edge, *ids).save()"
             )
-        self._apply_persisted_row(
-            self.edit().set_edges(edge, *peer_ids).save(), edge=edge
-        )
+        self.edit().set_edges(edge, *peer_ids).save()
         return self
 
     def _pending_fields(self) -> dict[str, Any]:

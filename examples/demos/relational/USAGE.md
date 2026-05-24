@@ -8,11 +8,15 @@
 - EntQL
 - 子表 FK 查询
 - 跨表 IN 查询
+- **ActiveEntity** 脏字段 `save()`、`edit().set(...).save()`
+
+业务 API 速查见 [docs/QUICKSTART.md](../../../docs/QUICKSTART.md)。
 
 ## 运行
 
+在仓库根目录 `ent-python/`：
+
 ```bash
-cd python
 python -m examples.demos.relational.demo
 ```
 
@@ -62,6 +66,19 @@ with demo_bind(SCHEMAS):
     ).all()
 ```
 
+## 字段更新（无图边）
+
+本 demo 模型仅 FK，无边遍历；更新字段推荐：
+
+```python
+draft = Article.get(title="Draft notes")
+draft.status = "published"   # 脏字段检测
+draft.save()
+
+art = Article.get(title="entpy SQL guide")
+art.edit().set("body", art.body + " (updated)").save()
+```
+
 ## API 速查
 
 | 操作 | Active API |
@@ -73,6 +90,8 @@ with demo_bind(SCHEMAS):
 | 复杂条件 | `.where(F(Article).field.op(val))` |
 | 单条 | `Article.get(title="...")` 或 `Article.get(id=uuid)` |
 | 谓词 | `F(Schema).field.eq / gt / in_` |
+| 脏字段更新 | `row.field = ...; row.save()` |
+| 显式更新 | `row.edit().set("field", val).save()` |
 
 ## 数据模型
 
@@ -83,3 +102,8 @@ with demo_bind(SCHEMAS):
 | `authors` | id, create_time, name, region |
 | `articles` | id, create_time, title, body, status, **author_id** (UUID FK) |
 | `comments` | id, create_time, body, rating, **article_id** (UUID FK) |
+
+## 相关测试
+
+- `tests/active/test_active_entity.py`
+- `tests/test_bugs.py`

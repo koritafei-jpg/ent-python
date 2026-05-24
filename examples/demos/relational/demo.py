@@ -60,7 +60,16 @@ def main() -> None:
         print(f"  article id={art.id}")
         print(f"  create_time={art.create_time} delete_time={art.delete_time}")
 
-        print("\n=== 8. 删除（触发 on_delete）===")
+        print("\n=== 8. ActiveEntity 脏字段 save() ===")
+        draft = Article.get(title="Draft notes")
+        draft.status = "published"
+        draft.save()
+        assert Article.get(title="Draft notes").status == "published"
+
+        print("\n=== 9. edit() 显式更新 ===")
+        art.edit().set("body", art.body + " (updated)").save()
+
+        print("\n=== 10. 删除（触发 on_delete）===")
         draft_art = Article.get(title="Gremlin overview")
         to_remove = Comment.query(article_id=draft_art.id).first()
         if to_remove is not None:

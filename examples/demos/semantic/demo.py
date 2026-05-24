@@ -41,6 +41,12 @@ def main() -> None:
             print(f"  doc={doc.title} sections={n}")
             print(f"    create_time={doc.create_time}")
 
+        print("\n=== 5. ActiveEntity save / edit() ===")
+        doc = Document.get(title="entpy SQL runtime")
+        doc.category = "tech"
+        doc.save()
+        doc.edit().set("lang", "en").save()
+
         print_observer_events()
 
 

@@ -18,10 +18,13 @@
 - `documents`：id (UUID), create_time, title, category, lang, **content**（可检索）, **embedding**
 - `sections`：**document_id** (UUID FK), heading, content（子表）
 
+业务 API 见 [docs/QUICKSTART.md](../../../docs/QUICKSTART.md)。
+
 ## 运行
 
+在仓库根目录 `ent-python/`：
+
 ```bash
-cd python
 python -m examples.demos.bm25.demo
 ```
 
@@ -81,7 +84,19 @@ doc = Document.get(id=h.id)
 sections = Section.query(document_id=doc.id).all()
 ```
 
-## 5. 切换 BM25 后端（生产）
+## 5. ActiveEntity 更新（检索字段）
+
+```python
+doc = Document.get(title="entpy SQL runtime")
+doc.lang = "en"
+doc.save()
+
+doc.edit().set("title", doc.title + " (v2)").save()
+```
+
+修改 `title` / `content` 后若需刷新 BM25 索引，可调用 `search` 的 `reindex`（见 CLI 与 `tests/search/`）。
+
+## 6. 切换 BM25 后端（生产）
 
 ```python
 from entpy.search.backends.registry import get_bm25_backend

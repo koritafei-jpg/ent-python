@@ -181,15 +181,15 @@ with bind("ws://localhost:8182/gremlin", schemas=SCHEMAS, storage="gremlin"):
 
 ## 能力演示（examples/demos）
 
-五类 demo 均在 `examples/demos/`，各子目录含独立的 `models/`、`observers/`、`seed.py`，使用 `bind()` + `ActiveSchema` + `BaseSchema`（UUID 主键与时间戳）。详细说明见 [examples/demos/README.md](examples/demos/README.md)。
+五类 demo 均在 `examples/demos/`，各子目录含独立的 `models/`、`observers/`、`seed.py`、`USAGE.md`，使用 `demo_bind` + `ActiveSchema` + `BaseSchema`（UUID 主键与时间戳）。总览见 [examples/demos/README.md](examples/demos/README.md)，API 速查见 [docs/QUICKSTART.md](docs/QUICKSTART.md)。
 
 | # | 命令 | 场景 |
 |---|------|------|
-| 1 | `python -m examples.demos.relational.demo` | SQL CRUD、复杂查询、FK 子表 |
-| 2 | `python -m examples.demos.bm25.demo` | BM25 全文检索 + 条件过滤 |
-| 3 | `python -m examples.demos.semantic.demo` | 语义向量检索 |
+| 1 | `python -m examples.demos.relational.demo` | SQL CRUD、EntQL、FK 子表、`save()` / `edit()` |
+| 2 | `python -m examples.demos.bm25.demo` | BM25 检索 + SQL 后过滤 + 字段更新 |
+| 3 | `python -m examples.demos.semantic.demo` | 语义向量检索 + `save()` / `edit()` |
 | 4 | `python -m examples.demos.hybrid.demo` | BM25 + 语义 RRF 混合 |
-| 5 | `python -m examples.demos.gremlin.demo` | 图顶点、边遍历、多跳链 |
+| 5 | `python -m examples.demos.gremlin.demo` | `link()`、`with_()`、多跳 `out()` |
 
 演示 1–4 使用 SQLite 内存库；演示 5 需先启动 Gremlin：
 
@@ -201,16 +201,19 @@ python -m examples.demos.gremlin.demo
 ### 演示 1 示例（关系库）
 
 ```python
-from entpy.active import bind, migrate, F
-from examples.demos.relational.models import Article, Comment, SCHEMAS
+from entpy.active import migrate
+from examples.demos.common.connect import demo_bind
+from examples.demos.relational.models import Article, SCHEMAS
 from examples.demos.relational.seed import seed
 
-with bind("sqlite:///:memory:", schemas=SCHEMAS):
+with demo_bind(SCHEMAS):
     migrate()
     seed()
-    Article.query(status="published").all()
+    draft = Article.get(title="Draft notes")
+    draft.status = "published"
+    draft.save()
     art = Article.get(title="entpy SQL guide")
-    Comment.query(article_id=art.id).where(F(Comment).rating.gt(4)).all()
+    art.edit().set("body", art.body + " (updated)").save()
 ```
 
 ### 演示 2–4 示例（检索）
@@ -234,17 +237,15 @@ with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
 ### 演示 5 示例（多跳图遍历）
 
 ```python
-from entpy.active import bind, traverse, clear_graph, ensure_connection
+from examples.demos.common.connect import demo_bind_gremlin
 from examples.demos.gremlin.models import Person, GREMLIN_SCHEMAS
 from examples.demos.gremlin.seed import seed
 
-with bind("ws://localhost:8182/gremlin", schemas=GREMLIN_SCHEMAS, storage="gremlin"):
-    ensure_connection()
-    clear_graph("persons", "posts", "comments")
-    seed()
+with demo_bind_gremlin(GREMLIN_SCHEMAS):
+    seed()  # alice.link("knows", bob.id)
     alice = Person.get(name="Alice")
-    alice.out("knows").values("name").all()
     alice.out("knows").out("knows").values("name").all()
+    alice.link("knows", other_id)
 ```
 
 ## CLI

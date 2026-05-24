@@ -45,7 +45,16 @@ def main() -> None:
         for s in Section.query(document_id=doc.id).all():
             print(f"  section id={s.id} heading={s.heading}")
 
-        print("\n=== 6. BaseSchema 时间戳 ===")
+        print("\n=== 6. ActiveEntity 脏字段 save() ===")
+        doc = Document.get(title="entpy SQL runtime")
+        doc.lang = "en"
+        doc.save()
+        assert Document.get(id=doc.id).lang == "en"
+
+        print("\n=== 7. edit() 更新检索字段 ===")
+        doc.edit().set("title", doc.title + " (v2)").save()
+
+        print("\n=== 8. BaseSchema 时间戳 ===")
         print(f"  doc create_time={doc.create_time} delete_time={doc.delete_time}")
 
         print_observer_events()

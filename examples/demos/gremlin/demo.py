@@ -55,6 +55,18 @@ def run_demo() -> None:
                     f"  {person.name} -> {fr.name} -> post '{post.title}' -> {n} comment(s)"
                 )
 
+    print("\n=== 9. link() 追加边（推荐写法）===")
+    dave = Person.create(name="Dave", city="NYC")
+    alice.link("knows", dave.id)
+    print(f"  after link: {alice.out('knows').values('name').all()}")
+
+    print("\n=== 10. with_() 预加载 + 边变更后属性访问 ===")
+    row = Person.query(id=alice.id).with_("knows").only()
+    eve = Person.create(name="Eve", city="SF")
+    row.link("knows", eve.id)
+    print(f"  .knows after link: {[p.name for p in row.knows]}")
+    print(f"  .out('knows'): {row.out('knows').values('name').all()}")
+
     print_observer_events()
 
 

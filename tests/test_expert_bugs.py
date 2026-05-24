@@ -410,6 +410,49 @@ def test_active_entity_edit_link_set_links():
         assert User.get(id=u.id).age == 99
 
 
+def test_link_flushes_dirty_fields_same_save():
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        u = User.create(name="U", age=1)
+        g = Group.create(name="g")
+        u.age = 42
+        u.link("groups", g.id)
+        loaded = User.get(id=u.id)
+        assert loaded.age == 42
+        assert [x.name for x in loaded.out("groups").all()] == ["g"]
+
+
+def test_edit_add_flushes_dirty_fields():
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        u = User.create(name="U", age=1)
+        g = Group.create(name="g")
+        u.age = 7
+        u.edit().add("groups", g.id).save()
+        assert User.get(id=u.id).age == 7
+
+
+@pytest.mark.asyncio
+async def test_async_edit_add_flushes_dirty_fields():
+    from entpy.active import async_bind, migrate_async
+    from entpy.active.context import get_async_client
+
+    async with async_bind("sqlite+aiosqlite:///:memory:", schemas=SCHEMAS):
+        await migrate_async()
+        client = get_async_client()
+        u = await client.create(User, name="U", age=1).save()
+        g = await client.create(Group, name="g").save()
+        from entpy.active.entity import ActiveEntity
+
+        ae = ActiveEntity.from_entity(u)
+        ae.age = 99
+        await ae.edit().add("groups", g.id).save()
+        ref = await client.query(User).where(client.F(User).id.eq(u.id)).only()
+        assert ref.age == 99
+        groups = await ref.out("groups").all()
+        assert len(groups) == 1
+
+
 def test_query_unknown_kw_field_value_error():
     with bind("sqlite:///:memory:", schemas=SCHEMAS):
         migrate()

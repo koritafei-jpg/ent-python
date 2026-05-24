@@ -10,10 +10,13 @@
 - 复杂业务管道
 - 子表查询
 
+业务 API 见 [docs/QUICKSTART.md](../../../docs/QUICKSTART.md)。
+
 ## 运行
 
+在仓库根目录 `ent-python/`：
+
 ```bash
-cd python
 python -m examples.demos.hybrid.demo
 ```
 
@@ -80,6 +83,14 @@ filtered = sorted(filtered, key=lambda h: h.score, reverse=True)[:5]
 ## 4. 子表
 
 与 BM25 / 语义 demo 相同，按 `Section.document_id` 关联。
+
+## 5. ActiveEntity save
+
+```python
+doc = Document.get(title="entpy SQL runtime")
+doc.lang = "en"
+doc.save()
+```
 
 ## 参数说明
 

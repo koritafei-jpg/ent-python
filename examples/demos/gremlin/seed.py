@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from entpy.active import update
 from examples.demos.gremlin.models import Comment, Person, Post
 
 
@@ -13,8 +12,8 @@ def seed() -> dict[str, UUID]:
     bob = Person.create(name="Bob", city="SF")
     carol = Person.create(name="Carol", city="NYC")
 
-    update(Person, alice.id).add("knows", bob.id).save()
-    update(Person, bob.id).add("knows", carol.id).save()
+    alice.link("knows", bob.id)
+    bob.link("knows", carol.id)
 
     p1 = Post.create(title="entpy graph", topic="tech", author_id=alice.id)
     Post.create(title="SF food", topic="life", author_id=bob.id)

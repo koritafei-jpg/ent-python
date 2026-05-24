@@ -259,6 +259,19 @@ flowchart LR
 
 `ActiveEntity.save()` 仅提交 **脏字段**；JSON 字段通过快照比对检测原地修改（`metadata["k"]=...`）。
 
+**ActiveEntity 便捷 API（`entpy/active/entity.py`）：**
+
+| 方法 | 行为 |
+| --- | --- |
+| `entity.save()` | 脏字段 UPDATE；持久化后 `_apply_persisted_row` 更新行并 **失效** `_edges` 缓存 |
+| `entity.edit()` | 返回 `UpdateBuilder`（`set` / `add` / `set_edges`） |
+| `entity.link(edge, *ids)` | 绑定 `BoundUpdateBuilder`：`save()` 前合并脏字段，再 `add` + 落库 |
+| `entity.set_links(edge, *ids)` | M2M：`set_edges` + 同上脏字段合并 |
+| `entity.edit()` | 返回 `BoundUpdateBuilder` / `BoundAsyncUpdateBuilder`（非裸 `UpdateBuilder`） |
+| `Entity.__getattr__(edge_name)` | 未预加载时惰性 `out(edge).all()`；`with_()` 预加载后读 `_edges` |
+
+`link` / `set_links` 之后，属性边（如 `.groups`）与 `out("groups")` 一致，避免 `with_()` 缓存陈旧。
+
 ### 6.3 DELETE
 
 | 模式 | 行为 |
@@ -411,7 +424,7 @@ Client.open_with(hooks=...)
 | **读优化** | `load_neighbors_sql_batch`（async 原生 `await execute`）；Gremlin `load_edge_neighbors_batch`；query `with_()` 异步预加载不再整段 `run_sync`；Registry 边解析缓存 |
 | **异步** | `AsyncClient`、`chain_hooks_async`、`execute_query_async`；`sqlgraph_async` 查询/建删/边写入/reindex 批量更新原生 `await`（多跳 `traverse_chain_sql` 仍 `run_sync`） |
 | **检索** | PostgreSQL 需 pgvector；SQLite 仅 `allow_brute_fallback` 开发态；`reindex` 分页 + `batch_update_fields` |
-| **边更新** | `add()` 追加；`set_edges()` M2M 全量替换（`EdgeSpec.replace`）；O2O Update 独占替换；`QueryRequest.predicates` 传入拦截器 |
+| **边更新** | `add()` 追加；`set_edges()` M2M 全量替换；`ActiveEntity.link` / `set_links`；`with_()` 后边变更缓存失效 |
 | **数据健壮性** | JSON / dict / list 深拷贝与脏检测；`id=str(uuid)` 不可变 noop；`merge_mutation` 边列表去重；`Entity` 剥离 `_edges` 出 `_data` |
 | **检索** | `embed_on_save_hook` 对接外部 Embedding API |
 | **规范** | 未知边名 `ValueError`；`create_spec` / `update_spec` 校验 |
@@ -518,4 +531,4 @@ async def entpy_ctx(request, call_next):
 5. **读路径**：Policy → Interceptor → 谓词下推 → DB → `Entity`；可选 `with_()` 预加载边。
 6. **遍历与检索**：多跳与混合检索在框架内选择 fast path 或 Python 回退，对调用方 API 保持一致。
 
-更多可运行示例见 `examples/start/`、`examples/demos/`（五类演示）与 `examples/rag/`。
+更多可运行示例见 [QUICKSTART.md](QUICKSTART.md)、`examples/start/`、`examples/demos/`（五类演示，各含 `USAGE.md`）与 `examples/rag/`。

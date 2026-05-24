@@ -51,6 +51,10 @@ class ActiveEntity(Entity):
 
     @classmethod
     def from_entity(cls, entity: Entity, *, _new: bool = False, _async: bool = False) -> ActiveEntity:
+        from entpy.runtime.async_client import AsyncClient
+
+        if entity._client is not None and isinstance(entity._client, AsyncClient):
+            _async = True
         data = dict(entity._data)
         for name in _json_field_names(entity._schema):
             if name in data:
@@ -71,9 +75,9 @@ class ActiveEntity(Entity):
             client = self._client
             if client is None:
                 try:
-                    from entpy.active.context import get_client
+                    from entpy.active.context import get_bound_client
 
-                    client = get_client()
+                    client = get_bound_client()
                 except RuntimeError:
                     client = None
             if client is not None:
@@ -109,7 +113,9 @@ class ActiveEntity(Entity):
     def save(self) -> ActiveEntity:
         if self._async:
             raise RuntimeError("use await entity.persist() inside async_bind")
-        client = self._client or get_client()
+        from entpy.active.context import require_sync_client
+
+        client = self._client or require_sync_client()
         if self._new or self.id is None:
             saved = client.create(self._schema, **self._pending_fields()).save()
             object.__setattr__(self, "_new", False)
@@ -164,7 +170,9 @@ class ActiveEntity(Entity):
     def delete(self) -> None:
         if self._async:
             raise RuntimeError("use await entity.discard() inside async_bind")
-        client = self._client or get_client()
+        from entpy.active.context import require_sync_client
+
+        client = self._client or require_sync_client()
         if self.id is None:
             raise ValueError("cannot delete unsaved entity")
         client.delete(self._schema).one(self.id).execute()

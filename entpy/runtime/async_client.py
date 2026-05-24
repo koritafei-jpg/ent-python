@@ -142,6 +142,13 @@ class AsyncClient:
     def delete(self, schema: type[Schema]) -> AsyncDeleteBuilder:
         return AsyncDeleteBuilder(self, schema)
 
+    def search(self, schema: type[Schema]):
+        from entpy.search.builder import SearchBuilder
+        from entpy.search.registry import SearchRegistry
+
+        sr = SearchRegistry.from_registry(self._registry)
+        return SearchBuilder(self, schema, sr)
+
     def __getattr__(self, name: str) -> _AsyncNodeClient:
         for schema in self._registry.nodes:
             if _snake(schema.type_name()) == name:

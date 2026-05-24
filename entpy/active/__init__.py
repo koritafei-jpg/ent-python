@@ -32,17 +32,17 @@ def F(schema: type[Schema]):
 
 def search(schema: type[Schema]):
     """当前 bind 下的检索构建器（混合 / BM25 / 语义）。"""
-    return get_client().search(schema)
+    return get_bound_client().search(schema)
 
 
 def traverse(entity, edge: str | None = None):
     """边遍历（兼容写法）；推荐 ``entity.out('edge').out('edge').all()``。"""
-    return get_client().traverse(entity, edge)
+    return get_bound_client().traverse(entity, edge)
 
 
 def update(schema: type[Schema], id: int):
     """更新已有行（例如关联边）。"""
-    return get_client().update(schema, id)
+    return get_bound_client().update(schema, id)
 
 
 __all__ = [

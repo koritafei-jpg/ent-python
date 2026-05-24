@@ -284,6 +284,51 @@ def test_sync_bind_ignores_env_async_flag(monkeypatch):
         User.create(name="env-sync", age=1)
 
 
+def test_active_schema_raises_under_async_bind_only():
+    import asyncio
+
+    async def run():
+        from entpy.active import async_bind, migrate_async
+
+        async with async_bind("sqlite+aiosqlite:///:memory:", schemas=SCHEMAS):
+            await migrate_async()
+            with pytest.raises(RuntimeError, match="ActiveSchema"):
+                User.create(name="x", age=1)
+
+    asyncio.run(run())
+
+
+@pytest.mark.asyncio
+async def test_search_and_f_work_under_async_bind():
+    from entpy.active import async_bind, F, migrate_async, search
+    from examples.rag.models import Chunk, SCHEMAS as RAG_SCHEMAS
+
+    async with async_bind("sqlite+aiosqlite:///:memory:", schemas=RAG_SCHEMAS):
+        await migrate_async()
+        assert F(Chunk) is not None
+        sb = search(Chunk)
+        assert sb is not None
+
+
+@pytest.mark.asyncio
+async def test_active_entity_from_async_save_uses_persist():
+    from entpy.active import async_bind, migrate_async
+    from entpy.active.context import get_async_client
+    from entpy.active.entity import ActiveEntity
+
+    async with async_bind("sqlite+aiosqlite:///:memory:", schemas=SCHEMAS):
+        await migrate_async()
+        row = await get_async_client().create(User, name="a", age=1).save()
+        ae = ActiveEntity.from_entity(row)
+        assert ae._async is True
+        ae.name = "b"
+        await ae.persist()
+        ref = await get_async_client().query(User).where(
+            get_async_client().F(User).name.eq("b")
+        ).only()
+        assert ref.name == "b"
+
+
 @pytest.mark.asyncio
 async def test_async_query_with_interceptor():
     import asyncio

@@ -66,6 +66,19 @@ def get_async_client() -> Any:
     return client
 
 
+def require_sync_client() -> Any:
+    """ActiveSchema 同步 API 专用；``async_bind`` 下抛错。"""
+    from entpy.runtime.client import Client
+
+    client = get_bound_client()
+    if not isinstance(client, Client):
+        raise RuntimeError(
+            "ActiveSchema 同步 API 需要 with bind(...)；"
+            "async_bind 请使用 get_async_client() 或 await entity.persist()"
+        )
+    return client
+
+
 def get_bound_client() -> Any:
     """返回当前 bind 的同步或异步 Client（供 F() 等使用）。"""
     sync_client = _client_var.get()

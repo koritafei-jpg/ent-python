@@ -233,7 +233,10 @@ class UpdateBuilder:
                 edges=dict(self._edges),
             ),
         )
-        return Entity(self._schema, row, self._client)
+        row_data = materialize_field_values(
+            self._client._registry, self._schema, dict(row)
+        )
+        return Entity(self._schema, row_data, self._client)
 
 
 class DeleteBuilder:

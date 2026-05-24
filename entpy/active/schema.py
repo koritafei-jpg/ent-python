@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from entpy.active.context import get_client
+from entpy.active.context import require_sync_client
 from entpy.active.entity import ActiveEntity
 from entpy.active.queryset import ActiveQuerySet
 from entpy.schema.base import Schema, View
@@ -17,7 +17,7 @@ class ActiveSchema:
     def create(cls, /, **fields: Any) -> ActiveEntity:
         if issubclass(cls, View):
             raise TypeError(f"{cls.type_name()} is a View")
-        client = get_client()
+        client = require_sync_client()
         entity = client.create(cls, **fields).save()
         return ActiveEntity.from_entity(entity)
 
@@ -29,13 +29,13 @@ class ActiveSchema:
         from entpy.active.entity import _prepare_active_fields
 
         return ActiveEntity(
-            cls, _prepare_active_fields(cls, fields), get_client(), _new=True
+            cls, _prepare_active_fields(cls, fields), require_sync_client(), _new=True
         )
 
     @classmethod
     def query(cls, **kwargs: Any) -> ActiveQuerySet:
-        return ActiveQuerySet(cls, get_client(), kwargs=kwargs)
+        return ActiveQuerySet(cls, require_sync_client(), kwargs=kwargs)
 
     @classmethod
     def get(cls, **kwargs: Any) -> ActiveEntity:
-        return ActiveQuerySet(cls, get_client(), kwargs=kwargs).only()
+        return ActiveQuerySet(cls, require_sync_client(), kwargs=kwargs).only()

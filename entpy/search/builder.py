@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from entpy.runtime.driver_util import sync_sql_session
 from entpy.schema.base import Schema
 from entpy.search.backends.registry import get_bm25_backend
 from entpy.search.embedder import Embedder
@@ -46,7 +47,7 @@ class SearchBuilder:
         table = self._client._registry.table_for(self._schema)
         col = self._meta.text_columns[0]
         backend = self._bm25_backend()
-        with self._client._driver.session() as session:
+        with sync_sql_session(self._client) as session:
             return backend.search(session, table, col, query, top_k=top_k)
 
     async def semantic(
@@ -70,7 +71,7 @@ class SearchBuilder:
         table = self._client._registry.table_for(self._schema)
         sem = SemanticBackend()
         text_col = self._meta.text_columns[0] if self._meta.text_columns else "data"
-        with self._client._driver.session() as session:
+        with sync_sql_session(self._client) as session:
             return sem.search(
                 session,
                 table,

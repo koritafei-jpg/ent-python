@@ -20,6 +20,8 @@ from entpy.runtime.query_exec import execute_query_sync
 from entpy.runtime.spec_helpers import create_spec, update_spec
 from entpy.runtime.validation import (
     collect_update_fields_after_hooks,
+    isolate_field_value,
+    isolate_fields,
     merge_mutation_into_builder,
     reject_immutable_updates,
     snapshot_edges,
@@ -37,11 +39,11 @@ class CreateBuilder:
             raise TypeError(f"{schema.type_name()} is a View")
         self._client = client
         self._schema = schema
-        self._fields: dict[str, Any] = dict(initial or {})
+        self._fields: dict[str, Any] = isolate_fields(schema, dict(initial or {}))
         self._edges: dict[str, list[Any]] = {}
 
     def set(self, name: str, value: Any) -> CreateBuilder:
-        self._fields[name] = value
+        self._fields[name] = isolate_field_value(self._schema, name, value)
         return self
 
     def add(self, edge: str, *ids: Any) -> CreateBuilder:
@@ -177,7 +179,7 @@ class UpdateBuilder:
 
     def set(self, name: str, value: Any) -> UpdateBuilder:
         self._explicit_fields.add(name)
-        self._fields[name] = value
+        self._fields[name] = isolate_field_value(self._schema, name, value)
         return self
 
     def add(self, edge: str, *ids: int) -> UpdateBuilder:

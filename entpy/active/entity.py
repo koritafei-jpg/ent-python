@@ -8,17 +8,12 @@ from typing import Any
 
 from entpy.active.context import get_async_client, get_client
 from entpy.runtime.entity import Entity
+from entpy.runtime.validation import isolate_fields, json_field_names
 from entpy.schema.base import Schema
-from entpy.schema.field import FieldType
 
 
 def _json_field_names(schema: type[Schema]) -> frozenset[str]:
-    names: set[str] = set()
-    for f in schema.fields():
-        d = getattr(f, "_d", None)
-        if d is not None and d.typ == FieldType.JSON:
-            names.add(d.name)
-    return frozenset(names)
+    return json_field_names(schema)
 
 
 def _json_snapshot(value: Any) -> str:
@@ -32,15 +27,7 @@ def _copy_mutable(value: Any) -> Any:
 
 
 def _prepare_active_fields(schema: type[Schema], fields: dict[str, Any]) -> dict[str, Any]:
-    """构造 Active 实例时隔离可变字段（JSON / dict / list）。"""
-    data = dict(fields)
-    for name in _json_field_names(schema):
-        if name in data:
-            data[name] = copy.deepcopy(data[name])
-    for key, value in list(data.items()):
-        if key not in _json_field_names(schema):
-            data[key] = _copy_mutable(value)
-    return data
+    return isolate_fields(schema, fields)
 
 
 class ActiveEntity(Entity):
@@ -55,7 +42,7 @@ class ActiveEntity(Entity):
         _new: bool = False,
         _async: bool = False,
     ) -> None:
-        super().__init__(schema, data, client)
+        super().__init__(schema, isolate_fields(schema, data), client)
         object.__setattr__(self, "_new", _new)
         object.__setattr__(self, "_async", _async)
         object.__setattr__(self, "_dirty", set())

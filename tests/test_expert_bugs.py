@@ -116,6 +116,64 @@ def test_traverse_out_reflects_edges_after_update():
         assert len(u.out("groups").all()) == 1
 
 
+def test_builder_isolates_json_before_save():
+    class Note(ActiveSchema, BaseSchema):
+        @classmethod
+        def fields(cls):
+            return [
+                field.string("title").default(""),
+                field.json_("metadata").default({}),
+            ]
+
+    with bind("sqlite:///:memory:", schemas=[Note]):
+        migrate()
+        shared = {"k": 1}
+        builder = get_client().create(Note, title="t2", metadata=shared)
+        shared["k"] = 999
+        row = builder.save()
+        assert Note.get(id=row.id).metadata == {"k": 1}
+
+
+def test_active_entity_init_isolates_json():
+    class Note(ActiveSchema, BaseSchema):
+        @classmethod
+        def fields(cls):
+            return [field.json_("metadata").default({})]
+
+    with bind("sqlite:///:memory:", schemas=[Note]):
+        migrate()
+        from entpy.active.entity import ActiveEntity
+        from entpy.active.context import get_client
+
+        shared = {"k": 1}
+        ae = ActiveEntity(Note, {"metadata": shared}, get_client(), _new=True)
+        shared["k"] = 999
+        ae.save()
+        assert Note.get(id=ae.id).metadata == {"k": 1}
+
+
+def test_resolve_connection_applies_runtime_hooks():
+    from entpy.runtime.connect import ConnectRequest, resolve_connection
+    from entpy.runtime.hook import hook
+
+    @hook
+    def stamp(next_m, m):
+        if "name" in m.fields:
+            m.fields["name"] = "STAMPED"
+        return next_m.mutate(m)
+
+    req = ConnectRequest(
+        schemas=SCHEMAS,
+        dsn="sqlite:///:memory:",
+        runtime_hooks=[stamp],
+    )
+    client = resolve_connection(req)
+    client.migrate()
+    u = client.create(User, name="alice", age=1).save()
+    assert u.name == "STAMPED"
+    client.close()
+
+
 def test_entity_strips_edges_from_data():
     from entpy.runtime.entity import Entity
 

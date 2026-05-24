@@ -2,9 +2,42 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from entpy.schema.base import Schema, SearchMixin
+from entpy.schema.field import FieldType
+
+
+def json_field_names(schema: type[Schema]) -> frozenset[str]:
+    names: set[str] = set()
+    for f in schema.fields():
+        d = getattr(f, "_d", None)
+        if d is not None and d.typ == FieldType.JSON:
+            names.add(d.name)
+    return frozenset(names)
+
+
+def isolate_field_value(schema: type[Schema], name: str, value: Any) -> Any:
+    """深拷贝 JSON / dict / list，避免调用方别名修改落库数据。"""
+    if name in json_field_names(schema) and isinstance(value, (dict, list)):
+        return copy.deepcopy(value)
+    if isinstance(value, (dict, list)):
+        return copy.deepcopy(value)
+    return value
+
+
+def isolate_fields(schema: type[Schema], fields: dict[str, Any]) -> dict[str, Any]:
+    """批量隔离可变字段（Create/Update Builder 与 ActiveEntity 共用）。"""
+    data = dict(fields)
+    json_names = json_field_names(schema)
+    for name in json_names:
+        if name in data:
+            data[name] = copy.deepcopy(data[name])
+    for key, value in list(data.items()):
+        if key not in json_names:
+            data[key] = isolate_field_value(schema, key, value)
+    return data
 
 
 def snapshot_edges(edges: dict[str, list[Any]]) -> dict[str, list[Any]]:

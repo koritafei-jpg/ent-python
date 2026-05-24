@@ -109,7 +109,11 @@ def bind(
         env_prefix=env_prefix,
         engine_kw=engine_kw,
     )
-    resolved = resolve_connection(request, extra_hooks=connection_hooks)
+    resolved = resolve_connection(
+        request,
+        extra_hooks=connection_hooks,
+        apply_runtime_hooks=False,
+    )
     prev_hooks = list(resolved._hooks)
     if hooks:
         resolved._hooks = list(hooks) + prev_hooks
@@ -182,7 +186,11 @@ async def async_bind(
         env_prefix=env_prefix,
         engine_kw=engine_kw,
     )
-    resolved = resolve_connection(request, extra_hooks=connection_hooks)
+    resolved = resolve_connection(
+        request,
+        extra_hooks=connection_hooks,
+        apply_runtime_hooks=False,
+    )
     prev_hooks = list(resolved._hooks)
     if hooks:
         resolved._hooks = list(hooks) + prev_hooks

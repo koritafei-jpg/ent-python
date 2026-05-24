@@ -234,6 +234,7 @@ def resolve_connection(
     request: ConnectRequest,
     *,
     extra_hooks: list[ConnectionHook] | None = None,
+    apply_runtime_hooks: bool = True,
 ) -> Any:
     """按钩子链解析并返回 Client / AsyncClient。"""
     chain = list(_HOOKS) + _default_hooks()
@@ -241,7 +242,10 @@ def resolve_connection(
         chain = list(extra_hooks) + chain
     for hook in chain:
         if hook.match(request):
-            return hook.open(request)
+            client = hook.open(request)
+            if apply_runtime_hooks and request.runtime_hooks:
+                client._hooks = list(request.runtime_hooks) + list(client._hooks)
+            return client
     raise RuntimeError(
         "no connection hook matched: provide dsn=, config=, client=, "
         "source='env', or register_connection_hook(...)"

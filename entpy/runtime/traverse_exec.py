@@ -189,6 +189,10 @@ async def try_sql_fast_path_async(state: TraverseState) -> list[Any] | None:
         return None
 
 
+def _neighbor_ids_for_filter(entities: list[Entity]) -> list[Any]:
+    return [e.id for e in entities]
+
+
 def filter_entities_sync(
     state: TraverseState,
     entities: list[Entity],
@@ -197,7 +201,9 @@ def filter_entities_sync(
     """慢路径 / 快路径后：按谓词二次过滤邻居。"""
     if not state.predicates or not entities:
         return entities
-    ids = [e.id for e in entities]
+    ids = _neighbor_ids_for_filter(entities)
+    if not ids:
+        return []
     qb = state.client.query(peer_schema).where(
         state.client.F(peer_schema).id.in_(ids)
     )
@@ -215,7 +221,9 @@ async def filter_entities_async(
 ) -> list[Entity]:
     if not state.predicates or not entities:
         return entities
-    ids = [e.id for e in entities]
+    ids = _neighbor_ids_for_filter(entities)
+    if not ids:
+        return []
     qb = state.client.query(peer_schema).where(
         state.client.F(peer_schema).id.in_(ids)
     )
@@ -265,17 +273,7 @@ async def walk_multi_hop_slow_async(
     state: TraverseState,
     hop_batch: Callable[[list[Entity], str], Awaitable[list[Entity]]],
 ) -> list[Entity]:
-    current: list[Entity] = [state.entity]
-    for edge_name in state.hops:
-        next_entities: list[Entity] = []
-        seen: set[Any] = set()
-        for neighbor in await hop_batch(current, edge_name):
-            if neighbor.id in seen:
-                continue
-            seen.add(neighbor.id)
-            next_entities.append(neighbor)
-        current = next_entities
-    return current
+    return await tc.walk_multi_hop_async(state.entity, state.hops, hop_batch)
 
 
 def _finish_fast_path(state: TraverseState, fast: list[Any]) -> list[Any]:

@@ -381,6 +381,36 @@ def test_migrate_rejects_async_bind_only():
     asyncio.run(run())
 
 
+def test_entql_empty_or_matches_nothing():
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        client = get_client()
+        User.create(name="a", age=1)
+        User.create(name="b", age=2)
+        rows = client.query(User).entql({"or": []}).all()
+        assert rows == []
+
+
+def test_merge_mutation_respects_set_edges_replace():
+    from entpy.runtime.hook import hook
+
+    @hook
+    def force_group(next_m, mutation):
+        mutation.edges["groups"] = []
+        return next_m.mutate(mutation)
+
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        u = User.create(name="U", age=1)
+        g1 = Group.create(name="alpha")
+        g2 = Group.create(name="beta")
+        client = get_client()
+        client.update(User, u.id).add("groups", g1.id, g2.id).save()
+        client._hooks = [force_group]
+        client.update(User, u.id).set_edges("groups", g2.id).save()
+        assert u.out("groups").all() == []
+
+
 def test_entql_or_has_gremlin_fn():
     from entpy.entql.filter import entql_to_predicates
     from entpy.runtime import Client

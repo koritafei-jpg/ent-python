@@ -229,6 +229,14 @@ flowchart TD
 
 SQL 边写入：M2M 写 join 表（SQLite / PG 支持 `ON CONFLICT DO NOTHING` 幂等）；O2M / O2O 更新对端 FK。
 
+**Update 边 API：**
+
+| 方法 | 语义 |
+| --- | --- |
+| `add(edge, *ids)` | **追加**（M2M 幂等插入；与改前行为一致） |
+| `set_edges(edge, *ids)` | 仅 **M2M**：保存后该边集合 **恰好** 为 `ids`（可先 `set_edges` 再 `add` 合并为同一 save 的最终列表）；空参数清空关联 |
+| O2O | 无 `set_edges`；Update 时 **独占替换**（先解除旧 FK 再绑定新 peer） |
+
 ### 6.2 UPDATE
 
 ```mermaid
@@ -400,10 +408,10 @@ Client.open_with(hooks=...)
 | **事务** | `transaction()` 块内 session 复用 |
 | **遍历** | 链式 `.out()`；SQL JOIN 多跳 + 复杂边回退；Gremlin 多跳 fast path |
 | **写优化** | SQL `RETURNING`；Gremlin 单次 `valueMap` 返回；按谓词删除 |
-| **读优化** | `load_neighbors_sql_batch`；Gremlin `load_edge_neighbors_batch`（`group().by(id)`）；Registry 边解析缓存；遍历 hop 解析缓存 |
+| **读优化** | `load_neighbors_sql_batch`（async 原生 `await execute`）；Gremlin `load_edge_neighbors_batch`；query `with_()` 异步预加载不再整段 `run_sync`；Registry 边解析缓存 |
 | **异步** | `AsyncClient`、`chain_hooks_async`、`execute_query_async`；`sqlgraph_async.query_nodes` 原生 `await execute` |
 | **检索** | PostgreSQL 需 pgvector；SQLite 仅 `allow_brute_fallback` 开发态；`reindex` 分页 + `batch_update_fields` |
-| **边更新** | SQL/Gremlin Update 时 O2O 独占替换；M2M/O2M 保持追加；`QueryRequest.predicates` 传入拦截器 |
+| **边更新** | `add()` 追加；`set_edges()` M2M 全量替换（`EdgeSpec.replace`）；O2O Update 独占替换；`QueryRequest.predicates` 传入拦截器 |
 | **数据健壮性** | JSON / dict / list 深拷贝与脏检测；`id=str(uuid)` 不可变 noop；`merge_mutation` 边列表去重；`Entity` 剥离 `_edges` 出 `_data` |
 | **检索** | `embed_on_save_hook` 对接外部 Embedding API |
 | **规范** | 未知边名 `ValueError`；`create_spec` / `update_spec` 校验 |

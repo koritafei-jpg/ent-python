@@ -197,11 +197,24 @@ def _apply_edge_o2o_fk(
         )
 
 
+def _replace_m2m_edges_sql(
+    session: Session, tables: dict, src_id: Any, edge: EdgeSpec
+) -> None:
+    """M2M 全量替换：清空 owner 在 join 表中的行，再插入 ``edge.ids``。"""
+    jt = tables[edge.join_table]
+    peer_col, owner_col = edge.join_columns
+    session.execute(delete(jt).where(getattr(jt.c, owner_col) == src_id))
+    for tid in edge.ids:
+        _insert_m2m_row(session, jt, {owner_col: src_id, peer_col: tid})
+
+
 def _apply_edges_on_update(
     session: Session, tables: dict, src_id: Any, edge: EdgeSpec
 ) -> None:
-    """Update 时同步边；M2M/O2M 保持追加语义，O2O 使用独占替换。"""
-    if edge.rel == RelType.O2O and edge.fk_columns:
+    """Update 时同步边；``replace`` 的 M2M 全量替换；O2O 独占；其余追加。"""
+    if edge.rel == RelType.M2M and edge.join_table and edge.replace:
+        _replace_m2m_edges_sql(session, tables, src_id, edge)
+    elif edge.rel == RelType.O2O and edge.fk_columns:
         _apply_edge_o2o_fk(session, tables, src_id, edge)
     else:
         _apply_edge_on_create(session, tables, src_id, edge)

@@ -55,6 +55,21 @@ def test_query_only_does_not_mutate_builder_limit():
         assert qb._limit == 10
 
 
+def test_predicate_in_empty_is_unsatisfiable():
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        User.create(name="alice", age=1)
+        from entpy.active.context import get_client
+
+        client = get_client()
+        rows = (
+            client.query(User)
+            .where(client.F(User).id.in_([]))
+            .all()
+        )
+        assert rows == []
+
+
 def test_batch_neighbors_rejects_mixed_schema():
     from examples.start.models import Group
 

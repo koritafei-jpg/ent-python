@@ -17,6 +17,7 @@ class EdgeSpec:
     fk_columns: list[str] = dc_field(default_factory=list)
     join_table: str | None = None
     join_columns: list[str] = dc_field(default_factory=list)
+    replace: bool = False
 
 
 @dataclass

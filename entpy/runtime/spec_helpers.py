@@ -49,12 +49,19 @@ def create_spec(registry: Registry, schema: type[Schema], fields: dict, edges: d
 
 
 def update_spec(
-    registry: Registry, schema: type[Schema], id: Any, fields: dict, edges: dict
+    registry: Registry,
+    schema: type[Schema],
+    id: Any,
+    fields: dict,
+    edges: dict,
+    *,
+    edge_replace: set[str] | None = None,
 ) -> UpdateSpec:
     node = registry.node_for(schema)
+    replace_names = edge_replace or set()
     edge_specs = []
     for ename, ids in edges.items():
-        if not ids:
+        if not ids and ename not in replace_names:
             continue
         re = _require_edge(registry, schema, ename)
         edge_specs.append(
@@ -62,10 +69,11 @@ def update_spec(
                 rel=re.rel,
                 name=ename,
                 peer_table=re.peer.resolved_table(),
-                ids=ids,
+                ids=list(ids),
                 fk_columns=re.fk_columns,
                 join_table=re.join_table,
                 join_columns=re.join_columns,
+                replace=ename in replace_names,
             )
         )
     return UpdateSpec(table=node.resolved_table(), id=id, fields=fields, edges=edge_specs)

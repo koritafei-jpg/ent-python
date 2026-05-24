@@ -35,10 +35,19 @@ from entpy.runtime.validation import (
     snapshot_edges,
 )
 from entpy.schema.base import Schema, View
+from entpy.schema.edge import RelType
 
 
-def _is_noop_update(fields: dict[str, Any], edges: dict[str, list[Any]]) -> bool:
-    return not fields and not any(edges.values())
+def _is_noop_update(
+    fields: dict[str, Any],
+    edges: dict[str, list[Any]],
+    edge_replace: set[str] | None = None,
+) -> bool:
+    if fields or any(edges.values()):
+        return False
+    if edge_replace:
+        return False
+    return not edges
 
 
 def _load_existing_entity(client: Any, schema: type[Schema], row_id: Any) -> Entity:
@@ -217,6 +226,7 @@ class UpdateBuilder:
         self._fields: dict[str, Any] = {}
         self._explicit_fields: set[str] = set()
         self._edges: dict[str, list[Any]] = {}
+        self._edge_replace: set[str] = set()
 
     def set(self, name: str, value: Any) -> UpdateBuilder:
         self._explicit_fields.add(name)
@@ -224,7 +234,23 @@ class UpdateBuilder:
         return self
 
     def add(self, edge: str, *ids: int) -> UpdateBuilder:
+        """追加关联（M2M 幂等插入；O2M/O2O 按方言语义追加）。"""
         self._edges.setdefault(edge, []).extend(ids)
+        return self
+
+    def set_edges(self, edge: str, *ids: Any) -> UpdateBuilder:
+        """M2M 边全量替换：保存后该边恰好为 ``ids``（``add()`` 仍为追加）。"""
+        re = self._client._registry.resolve_edge(self._schema, edge)
+        if re is None:
+            raise ValueError(
+                f"unknown edge {edge!r} on {self._schema.type_name()}"
+            )
+        if re.rel != RelType.M2M or not re.join_table:
+            raise TypeError(
+                f"set_edges() only supports M2M edges with a join table, got {edge!r}"
+            )
+        self._edges[edge] = list(ids)
+        self._edge_replace.add(edge)
         return self
 
     def save(self) -> Entity:
@@ -240,13 +266,25 @@ class UpdateBuilder:
         self._fields = collect_update_fields_after_hooks(
             self._schema, mutation, self._explicit_fields
         )
-        merge_mutation_into_builder(mutation, fields={}, edges=self._edges)
+        merge_mutation_into_builder(
+            mutation,
+            fields={},
+            edges=self._edges,
+            edge_replace=self._edge_replace,
+        )
         from entpy.active.context import get_effective_ctx
 
         eval_mutation(get_effective_ctx(self._client), self._client._policies, mutation)
-        if _is_noop_update(self._fields, self._edges):
+        if _is_noop_update(self._fields, self._edges, self._edge_replace):
             return _load_existing_entity(self._client, self._schema, self._id)
-        spec = update_spec(self._client._registry, self._schema, self._id, self._fields, self._edges)
+        spec = update_spec(
+            self._client._registry,
+            self._schema,
+            self._id,
+            self._fields,
+            self._edges,
+            edge_replace=self._edge_replace,
+        )
         with self._client._driver.session() as session:
             if _is_gremlin(self._client):
                 from entpy.dialect.gremlin import graph_ops

@@ -63,6 +63,18 @@ class FieldRef:
 
     def in_(self, values: list[Any]) -> Predicate:
         attr = self._attr
+        if not values:
+            from sqlalchemy import false as sql_false
+
+            def fn(t):
+                return sql_false()
+
+            def gremlin_fn(t):
+                from gremlinpython.process.graph_traversal import __
+
+                return t.where(__.constant(False))
+
+            return Predicate(fn, gremlin_fn)
 
         def fn(t):
             return getattr(t.c, attr).in_(values)

@@ -99,15 +99,27 @@ class AsyncUpdateBuilder(UpdateBuilder):
         self._fields = collect_update_fields_after_hooks(
             self._schema, mutation, self._explicit_fields
         )
-        merge_mutation_into_builder(mutation, fields={}, edges=self._edges)
+        merge_mutation_into_builder(
+            mutation,
+            fields={},
+            edges=self._edges,
+            edge_replace=self._edge_replace,
+        )
         from entpy.active.context import get_effective_ctx
 
         eval_mutation(get_effective_ctx(self._client), self._client._policies, mutation)
-        if _is_noop_update(self._fields, self._edges):
+        if _is_noop_update(self._fields, self._edges, self._edge_replace):
             return await _load_existing_entity_async(
                 self._client, self._schema, self._id
             )
-        spec = update_spec(self._client._registry, self._schema, self._id, self._fields, self._edges)
+        spec = update_spec(
+            self._client._registry,
+            self._schema,
+            self._id,
+            self._fields,
+            self._edges,
+            edge_replace=self._edge_replace,
+        )
         if _is_gremlin(self._client):
             from entpy.dialect.gremlin import graph_ops
 

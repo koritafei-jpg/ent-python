@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, TypeVar
+from typing import Any, Awaitable, Callable
 
 from entpy.ir.graph import ResolvedEdge
 from entpy.runtime.entity import Entity
 from entpy.runtime.errors import NotFoundError
 from entpy.runtime.predicate import Predicate
 from entpy.schema.base import Schema
-
-T = TypeVar("T")
 
 
 def resolve_hops(
@@ -53,24 +51,6 @@ def branch_chain(
     return chain
 
 
-def finish_entities(
-    entities: list[Entity],
-    peer_schema: type[Schema],
-    *,
-    client: Any,
-    predicates: list[Predicate],
-    limit: int | None,
-    project_field: str | None,
-    filter_entities: Callable[[list[Entity], type[Schema]], T],
-) -> list[Any] | T:
-    entities = filter_entities(entities, peer_schema)
-    if limit is not None and not predicates:
-        entities = entities[:limit]
-    if project_field:
-        return [e._data.get(project_field) for e in entities]
-    return entities
-
-
 def walk_multi_hop(
     entity: Entity,
     hops: list[str],
@@ -82,6 +62,25 @@ def walk_multi_hop(
         next_entities: list[Entity] = []
         seen: set[Any] = set()
         for neighbor in hop_batch(client, current, edge_name):
+            if neighbor.id in seen:
+                continue
+            seen.add(neighbor.id)
+            next_entities.append(neighbor)
+        current = next_entities
+    return current
+
+
+async def walk_multi_hop_async(
+    entity: Entity,
+    hops: list[str],
+    hop_batch: Callable[[list[Entity], str], Awaitable[list[Entity]]],
+) -> list[Entity]:
+    """多跳慢路径（async）：与 ``walk_multi_hop`` 语义一致。"""
+    current: list[Entity] = [entity]
+    for edge_name in hops:
+        next_entities: list[Entity] = []
+        seen: set[Any] = set()
+        for neighbor in await hop_batch(current, edge_name):
             if neighbor.id in seen:
                 continue
             seen.add(neighbor.id)

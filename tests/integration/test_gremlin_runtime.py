@@ -84,3 +84,14 @@ def test_gremlin_m2m_groups(gremlin_client):
         gremlin_client.F(User).id.eq(u.id)
     ).with_("groups").only()
     assert len(loaded._edges.get("groups", [])) == 1
+
+
+@pytest.mark.gremlin
+def test_gremlin_m2m_set_edges_replaces(gremlin_client):
+    u = gremlin_client.create(User, name="Dave", age=1).save()
+    g1 = gremlin_client.create(Group, name="alpha").save()
+    g2 = gremlin_client.create(Group, name="beta").save()
+    gremlin_client.update(User, u.id).add("groups", g1.id, g2.id).save()
+    assert len(u.out("groups").all()) == 2
+    gremlin_client.update(User, u.id).set_edges("groups", g2.id).save()
+    assert {x.name for x in u.out("groups").all()} == {"beta"}

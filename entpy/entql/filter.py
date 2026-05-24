@@ -7,6 +7,21 @@ from typing import Any
 from entpy.runtime.predicate import Predicate, PredicateFactory
 
 
+def _unsatisfiable_predicate() -> Predicate:
+    """空 ``or`` / 恒假条件（SQL ``false()``；Gremlin ``where(constant(false))``）。"""
+    from sqlalchemy import false as sql_false
+
+    def fn(t):
+        return sql_false()
+
+    def gremlin_fn(t):
+        from gremlinpython.process.graph_traversal import __
+
+        return t.where(__.constant(False))
+
+    return Predicate(fn, gremlin_fn)
+
+
 def entql_to_predicates(
     F: PredicateFactory,
     filter_obj: dict[str, Any],
@@ -20,32 +35,39 @@ def entql_to_predicates(
     preds: list[Predicate] = []
     for key, value in filter_obj.items():
         if key == "and":
+            if not isinstance(value, list):
+                raise ValueError("entql 'and' must be a list of filters")
             for sub in value:
                 preds.extend(entql_to_predicates(F, sub))
             continue
         if key == "or":
+            if not isinstance(value, list):
+                raise ValueError("entql 'or' must be a list of filters")
             from sqlalchemy import or_
 
             parts: list[Predicate] = []
             for sub in value:
                 parts.extend(entql_to_predicates(F, sub))
-            if parts:
-                def combined(t):
-                    return or_(*[p.apply(t) for p in parts])
+            if not parts:
+                preds.append(_unsatisfiable_predicate())
+                continue
 
-                def combined_gremlin(t):
-                    from gremlinpython.process.traversal import __
+            def combined(t):
+                return or_(*[p.apply(t) for p in parts])
 
-                    branches = []
-                    for p in parts:
-                        if p._gremlin_fn is None:
-                            raise RuntimeError(
-                                "entql or(): predicate has no gremlin implementation"
-                            )
-                        branches.append(p.apply_gremlin(__))
-                    return t.or_(*branches)
+            def combined_gremlin(t):
+                from gremlinpython.process.traversal import __
 
-                preds.append(Predicate(combined, combined_gremlin))
+                branches = []
+                for p in parts:
+                    if p._gremlin_fn is None:
+                        raise RuntimeError(
+                            "entql or(): predicate has no gremlin implementation"
+                        )
+                    branches.append(p.apply_gremlin(__))
+                return t.or_(*branches)
+
+            preds.append(Predicate(combined, combined_gremlin))
             continue
         ref = getattr(F, key)
         if isinstance(value, dict):

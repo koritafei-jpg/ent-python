@@ -178,10 +178,26 @@ def get_by_id(g, label: str, vid: Any) -> dict | None:
     return _vm_to_dict(rows[0])
 
 
-def _sync_edge_on_update(g, registry: Registry, from_id: Any, edge: EdgeSpec) -> None:
-    """Update 边：O2O 先解除旧独占边再链接；其余类型保持追加语义。"""
+def _replace_m2m_edges_gremlin(
+    g, registry: Registry, from_id: Any, edge: EdgeSpec
+) -> None:
+    """M2M 全量替换：删除 owner 上该边的全部 outE，再幂等链接 ``edge.ids``。"""
     re = _resolve_edge_spec(registry, edge)
     if re is None:
+        return
+    el = edge_label(re)
+    g.V(from_id).outE(el).drop().iterate()
+    if edge.ids:
+        _link_edge(g, registry, from_id, edge)
+
+
+def _sync_edge_on_update(g, registry: Registry, from_id: Any, edge: EdgeSpec) -> None:
+    """Update 边：M2M replace 全量替换；O2O 独占；其余追加。"""
+    re = _resolve_edge_spec(registry, edge)
+    if re is None:
+        return
+    if re.rel == RelType.M2M and edge.replace:
+        _replace_m2m_edges_gremlin(g, registry, from_id, edge)
         return
     if re.rel == RelType.O2O and re.fk_columns and not re.inverse:
         fk = re.fk_columns[0]

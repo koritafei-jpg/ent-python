@@ -107,6 +107,45 @@ def test_m2m_duplicate_add_idempotent():
         assert len(u.out("groups").all()) == 1
 
 
+def test_m2m_set_edges_replaces():
+    """set_edges 全量替换 M2M；add() 仍为追加。"""
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        client = get_client()
+        u = User.create(name="U", age=1)
+        g1 = Group.create(name="alpha")
+        g2 = Group.create(name="beta")
+        client.update(User, u.id).add("groups", g1.id, g2.id).save()
+        assert {x.name for x in u.out("groups").all()} == {"alpha", "beta"}
+
+        client.update(User, u.id).set_edges("groups", g2.id).save()
+        assert {x.name for x in u.out("groups").all()} == {"beta"}
+
+        client.update(User, u.id).set_edges("groups", g1.id).add("groups", g2.id).save()
+        assert {x.name for x in u.out("groups").all()} == {"alpha", "beta"}
+
+
+def test_m2m_set_edges_clear():
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        client = get_client()
+        u = User.create(name="U", age=1)
+        g = Group.create(name="alpha")
+        client.update(User, u.id).add("groups", g.id).save()
+        assert len(u.out("groups").all()) == 1
+        client.update(User, u.id).set_edges("groups").save()
+        assert u.out("groups").all() == []
+
+
+def test_set_edges_rejects_non_m2m():
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        u = User.create(name="U", age=1)
+        c = Car.create(model="X", registered_at=datetime.now(timezone.utc))
+        with pytest.raises(TypeError, match="M2M"):
+            get_client().update(User, u.id).set_edges("cars", c.id)
+
+
 def test_delete_one_and_where_raises():
     with bind("sqlite:///:memory:", schemas=SCHEMAS):
         migrate()

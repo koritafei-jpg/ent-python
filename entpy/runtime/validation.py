@@ -113,13 +113,18 @@ def merge_mutation_into_builder(
     fields: dict,
     edges: dict,
     allowed_field_keys: set[str] | None = None,
+    edge_replace: set[str] | None = None,
 ) -> None:
     """将 Hook 链修改后的 mutation 合并回 Builder 状态。"""
     to_merge = mutation.fields
     if allowed_field_keys is not None:
         to_merge = {k: v for k, v in mutation.fields.items() if k in allowed_field_keys}
     fields.update(to_merge)
+    replace_names = edge_replace or set()
     for name, ids in mutation.edges.items():
+        if name in replace_names:
+            edges[name] = list(ids)
+            continue
         if not ids:
             continue
         merged = list(edges.get(name) or [])

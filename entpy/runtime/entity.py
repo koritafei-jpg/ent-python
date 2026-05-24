@@ -41,6 +41,12 @@ class Entity:
             return None
         return re.peer.schema_type
 
+    def _load_edge_attribute(self, edge_name: str) -> list[Entity]:
+        """``with_()`` 缓存失效后，按边名惰性加载一跳邻居。"""
+        loaded = self.out(edge_name).all()
+        self._edges[edge_name] = [dict(e._data) for e in loaded]
+        return loaded
+
     def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
             raise AttributeError(name)
@@ -49,6 +55,8 @@ class Entity:
             return [Entity(peer, dict(e), self._client) for e in self._edges[name]]
         if name in self._data:
             return self._data[name]
+        if self.id is not None and self._peer_schema_for_edge(name) is not None:
+            return self._load_edge_attribute(name)
         raise AttributeError(name)
 
     def to_dict(self) -> dict[str, Any]:

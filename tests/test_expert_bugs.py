@@ -381,6 +381,21 @@ def test_migrate_rejects_async_bind_only():
     asyncio.run(run())
 
 
+def test_with_edges_cache_invalidated_after_link():
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        u = User.create(name="U", age=1)
+        g1 = Group.create(name="alpha")
+        g2 = Group.create(name="beta")
+        row = User.query(id=u.id).with_("groups").only()
+        assert row.groups == []
+        row.link("groups", g1.id)
+        assert [x.name for x in row.groups] == ["alpha"]
+        row.set_links("groups", g2.id)
+        assert [x.name for x in row.groups] == ["beta"]
+        assert [x.name for x in row.out("groups").all()] == ["beta"]
+
+
 def test_active_entity_edit_link_set_links():
     with bind("sqlite:///:memory:", schemas=SCHEMAS):
         migrate()

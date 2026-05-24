@@ -110,6 +110,14 @@ class ActiveEntity(Entity):
             if self._json_snapshots.get(name) != current:
                 self._dirty.add(name)
 
+    def _apply_persisted_row(self, row: Entity, *, edge: str | None = None) -> None:
+        """合并落库结果；失效 ``with_()`` 预加载的边缓存，避免 ``.groups`` 与库不一致。"""
+        self._data.update(row._data)
+        if edge is not None:
+            self._edges.pop(edge, None)
+        else:
+            self._edges.clear()
+
     def save(self) -> ActiveEntity:
         if self._async:
             raise RuntimeError("use await entity.persist() inside async_bind")
@@ -119,7 +127,7 @@ class ActiveEntity(Entity):
         if self._new or self.id is None:
             saved = client.create(self._schema, **self._pending_fields()).save()
             object.__setattr__(self, "_new", False)
-            self._data.update(saved._data)
+            self._apply_persisted_row(saved)
             self._dirty.clear()
             self._refresh_json_snapshots()
             object.__setattr__(self, "_client", client)
@@ -135,7 +143,7 @@ class ActiveEntity(Entity):
         for name, value in pending.items():
             builder.set(name, value)
         updated = builder.save()
-        self._data.update(updated._data)
+        self._apply_persisted_row(updated)
         self._dirty.clear()
         self._refresh_json_snapshots()
         return self
@@ -145,7 +153,7 @@ class ActiveEntity(Entity):
         if self._new or self.id is None:
             saved = await client.create(self._schema, **self._pending_fields()).save()
             object.__setattr__(self, "_new", False)
-            self._data.update(saved._data)
+            self._apply_persisted_row(saved)
             self._dirty.clear()
             self._refresh_json_snapshots()
             object.__setattr__(self, "_client", client)
@@ -162,7 +170,7 @@ class ActiveEntity(Entity):
         for name, value in pending.items():
             builder.set(name, value)
         updated = await builder.save()
-        self._data.update(updated._data)
+        self._apply_persisted_row(updated)
         self._dirty.clear()
         self._refresh_json_snapshots()
         return self
@@ -205,9 +213,8 @@ class ActiveEntity(Entity):
             raise RuntimeError(
                 "inside async_bind use: await entity.edit().add(edge, *ids).save()"
             )
-        return ActiveEntity.from_entity(
-            self.edit().add(edge, *peer_ids).save()
-        )
+        self._apply_persisted_row(self.edit().add(edge, *peer_ids).save(), edge=edge)
+        return self
 
     def set_links(self, edge: str, *peer_ids: Any) -> ActiveEntity:
         """M2M 边全量替换（等价 ``edit().set_edges(edge, *peer_ids).save()``）。"""
@@ -215,9 +222,10 @@ class ActiveEntity(Entity):
             raise RuntimeError(
                 "inside async_bind use: await entity.edit().set_edges(edge, *ids).save()"
             )
-        return ActiveEntity.from_entity(
-            self.edit().set_edges(edge, *peer_ids).save()
+        self._apply_persisted_row(
+            self.edit().set_edges(edge, *peer_ids).save(), edge=edge
         )
+        return self
 
     def _pending_fields(self) -> dict[str, Any]:
         return {k: v for k, v in self._data.items() if not k.startswith("_") and k != "id"}

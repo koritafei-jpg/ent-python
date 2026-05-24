@@ -53,7 +53,7 @@ with bind("sqlite:///:memory:", schemas=SCHEMAS):
 | 走边 | `u.out("groups").all()` |
 | 多跳 | `u.out("knows").out("knows").all()` |
 | JSON 过滤 | `User.query().entql({"age": {"gt": 18}}).all()` |
-| 预加载边 | `User.query().with_("groups").all()` 后访问 `row.groups` |
+| 预加载边 | `User.query().with_("groups").all()` 后访问 `row.groups`（`link`/`save` 后会自动失效该边缓存） |
 
 ## 4. 边（关系）语义
 

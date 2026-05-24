@@ -22,7 +22,6 @@ class Entity:
             self._edges = edges
         else:
             self._edges = {}
-        self._edge_entity_cache: dict[str, list[Entity]] = {}
 
     @property
     def id(self) -> Any:
@@ -46,13 +45,8 @@ class Entity:
         if name.startswith("_"):
             raise AttributeError(name)
         if name in self._edges:
-            cached = self._edge_entity_cache.get(name)
-            if cached is not None:
-                return cached
             peer = self._peer_schema_for_edge(name) or self._schema
-            wrapped = [Entity(peer, e, self._client) for e in self._edges[name]]
-            self._edge_entity_cache[name] = wrapped
-            return wrapped
+            return [Entity(peer, dict(e), self._client) for e in self._edges[name]]
         if name in self._data:
             return self._data[name]
         raise AttributeError(name)

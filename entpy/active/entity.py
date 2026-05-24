@@ -31,6 +31,18 @@ def _copy_mutable(value: Any) -> Any:
     return value
 
 
+def _prepare_active_fields(schema: type[Schema], fields: dict[str, Any]) -> dict[str, Any]:
+    """构造 Active 实例时隔离可变字段（JSON / dict / list）。"""
+    data = dict(fields)
+    for name in _json_field_names(schema):
+        if name in data:
+            data[name] = copy.deepcopy(data[name])
+    for key, value in list(data.items()):
+        if key not in _json_field_names(schema):
+            data[key] = _copy_mutable(value)
+    return data
+
+
 class ActiveEntity(Entity):
     """带脏字段跟踪的 save() 与删除辅助。"""
 

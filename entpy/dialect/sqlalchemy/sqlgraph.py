@@ -45,12 +45,10 @@ def load_neighbors_sql(
 
     fk = re.fk_columns[0]
     if re.inverse:
-        fk_val = owner_data.get(fk)
-        if fk_val is None:
-            owner_tbl = tables[owner_table]
-            fk_val = session.execute(
-                select(getattr(owner_tbl.c, fk)).where(owner_tbl.c.id == owner_id)
-            ).scalar_one_or_none()
+        owner_tbl = tables[owner_table]
+        fk_val = session.execute(
+            select(getattr(owner_tbl.c, fk)).where(owner_tbl.c.id == owner_id)
+        ).scalar_one_or_none()
         if fk_val is None:
             return []
         stmt = select(peer_table).where(peer_table.c.id == fk_val)
@@ -98,21 +96,12 @@ def load_neighbors_sql_batch(
     if re.inverse:
         owner_tbl = tables[owner_table]
         fk_map: dict[Any, Any] = {}
-        missing: list[Any] = []
-        for oid in owner_ids:
-            row = owner_rows.get(oid, {})
-            val = row.get(fk)
-            if val is not None:
-                fk_map[oid] = val
-            else:
-                missing.append(oid)
-        if missing:
-            stmt = select(owner_tbl.c.id, getattr(owner_tbl.c, fk)).where(
-                owner_tbl.c.id.in_(missing)
-            )
-            for rid, fkv in session.execute(stmt).all():
-                if fkv is not None:
-                    fk_map[rid] = fkv
+        stmt = select(owner_tbl.c.id, getattr(owner_tbl.c, fk)).where(
+            owner_tbl.c.id.in_(owner_ids)
+        )
+        for rid, fkv in session.execute(stmt).all():
+            if fkv is not None:
+                fk_map[rid] = fkv
         peer_ids = [v for v in fk_map.values() if v is not None]
         if not peer_ids:
             return out

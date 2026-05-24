@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from entpy.schema.base import Schema
+from entpy.schema.base import Schema, SearchMixin
 
 
 def snapshot_edges(edges: dict[str, list[Any]]) -> dict[str, list[Any]]:
@@ -20,9 +20,36 @@ def reject_immutable_updates(
             raise ValueError(f"field {f.name!r} is immutable and cannot be updated")
 
 
-def merge_mutation_into_builder(mutation: Any, *, fields: dict, edges: dict) -> None:
+def collect_update_fields_after_hooks(
+    schema: type[Schema],
+    mutation: Any,
+    explicit_fields: set[str],
+) -> dict[str, Any]:
+    """Update 落库字段：用户 ``set()`` 的列 + Hook 写入的检索向量等派生列。"""
+    out = {
+        name: mutation.fields[name]
+        for name in explicit_fields
+        if name in mutation.fields
+    }
+    if issubclass(schema, SearchMixin):
+        cfg = schema.search_config()
+        if cfg and cfg.vector_field and cfg.vector_field in mutation.fields:
+            out[cfg.vector_field] = mutation.fields[cfg.vector_field]
+    return out
+
+
+def merge_mutation_into_builder(
+    mutation: Any,
+    *,
+    fields: dict,
+    edges: dict,
+    allowed_field_keys: set[str] | None = None,
+) -> None:
     """将 Hook 链修改后的 mutation 合并回 Builder 状态。"""
-    fields.update(mutation.fields)
+    to_merge = mutation.fields
+    if allowed_field_keys is not None:
+        to_merge = {k: v for k, v in mutation.fields.items() if k in allowed_field_keys}
+    fields.update(to_merge)
     for name, ids in mutation.edges.items():
         if not ids:
             continue

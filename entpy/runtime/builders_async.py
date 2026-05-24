@@ -19,6 +19,7 @@ from entpy.runtime.predicate import Predicate
 from entpy.runtime.query_exec import execute_query_async
 from entpy.runtime.spec_helpers import create_spec, update_spec
 from entpy.runtime.validation import (
+    collect_update_fields_after_hooks,
     merge_mutation_into_builder,
     reject_immutable_updates,
     snapshot_edges,
@@ -66,11 +67,14 @@ class AsyncUpdateBuilder(UpdateBuilder):
             self._schema,
             Op.UPDATE_ONE,
             id=self._id,
-            fields=self._fields,
+            fields=dict(self._fields),
             edges=snapshot_edges(self._edges),
         )
         mutation = await chain_hooks_async(self._client._hooks, mutation)
-        merge_mutation_into_builder(mutation, fields=self._fields, edges=self._edges)
+        self._fields = collect_update_fields_after_hooks(
+            self._schema, mutation, self._explicit_fields
+        )
+        merge_mutation_into_builder(mutation, fields={}, edges=self._edges)
         from entpy.active.context import get_effective_ctx
 
         eval_mutation(get_effective_ctx(self._client), self._client._policies, mutation)

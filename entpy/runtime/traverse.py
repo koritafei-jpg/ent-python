@@ -25,10 +25,6 @@ def _hop_neighbors(client: Any, entity: Entity, edge_name: str) -> list[Entity]:
         raise ValueError(f"unknown edge {edge_name!r}")
     peer_schema = re.peer.schema_type
 
-    edges = entity._edges.get(edge_name)
-    if edges is not None:
-        return [Entity(peer_schema, e, client) for e in edges]
-
     with client._driver.session() as session:
         if client._driver.dialect() == "gremlin":
             from entpy.dialect.gremlin import graph_ops
@@ -66,14 +62,6 @@ def _hop_neighbors_batch(
         raise ValueError(f"unknown edge {edge_name!r}")
     peer_schema = re.peer.schema_type
 
-    if all(entity._edges.get(edge_name) is not None for entity in entities):
-        out: list[Entity] = []
-        for entity in entities:
-            out.extend(
-                Entity(peer_schema, e, client) for e in entity._edges[edge_name]
-            )
-        return out
-
     if len(entities) == 1:
         return _hop_neighbors(client, entities[0], edge_name)
 
@@ -107,10 +95,6 @@ async def _hop_neighbors_async(client: Any, entity: Entity, edge_name: str) -> l
     if re is None:
         raise ValueError(f"unknown edge {edge_name!r}")
     peer_schema = re.peer.schema_type
-
-    edges = entity._edges.get(edge_name)
-    if edges is not None:
-        return [Entity(peer_schema, e, client) for e in edges]
 
     if client._driver.dialect() == "gremlin":
         from entpy.dialect.gremlin import graph_ops
@@ -149,14 +133,6 @@ async def _hop_neighbors_batch_async(
     if re is None:
         raise ValueError(f"unknown edge {edge_name!r}")
     peer_schema = re.peer.schema_type
-
-    if all(entity._edges.get(edge_name) is not None for entity in entities):
-        out: list[Entity] = []
-        for entity in entities:
-            out.extend(
-                Entity(peer_schema, e, client) for e in entity._edges[edge_name]
-            )
-        return out
 
     if len(entities) == 1:
         return await _hop_neighbors_async(client, entities[0], edge_name)

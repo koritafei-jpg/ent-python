@@ -26,7 +26,11 @@ class ActiveSchema:
         """未持久化实例；调用 .save() 写入。"""
         if issubclass(cls, View):
             raise TypeError(f"{cls.type_name()} is a View")
-        return ActiveEntity(cls, dict(fields), get_client(), _new=True)
+        from entpy.active.entity import _prepare_active_fields
+
+        return ActiveEntity(
+            cls, _prepare_active_fields(cls, fields), get_client(), _new=True
+        )
 
     @classmethod
     def query(cls, **kwargs: Any) -> ActiveQuerySet:

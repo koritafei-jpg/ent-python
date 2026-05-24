@@ -326,6 +326,47 @@ def test_empty_update_is_noop_without_on_save():
         reg._by_schema.pop(User, None)
 
 
+def test_bind_client_rejects_async_client():
+    import asyncio
+
+    async def run():
+        from entpy.active import async_bind_client
+        from entpy.runtime.async_client import AsyncClient
+
+        ac = AsyncClient.open("sqlite+aiosqlite:///:memory:", schemas=SCHEMAS)
+        try:
+            await ac.migrate()
+            with pytest.raises(TypeError, match="bind_client"):
+                from entpy.active import bind_client
+
+                with bind_client(ac):
+                    pass
+        finally:
+            await ac.aclose()
+
+    asyncio.run(run())
+
+
+def test_async_bind_client_rejects_sync_client():
+    from entpy.active import async_bind_client, bind_client
+    from entpy.runtime.client import Client
+
+    sync = Client.open("sqlite:///:memory:", schemas=SCHEMAS)
+    try:
+        sync.migrate()
+
+        async def run():
+            with pytest.raises(TypeError, match="async_bind_client"):
+                async with async_bind_client(sync):
+                    pass
+
+        import asyncio
+
+        asyncio.run(run())
+    finally:
+        sync.close()
+
+
 def test_migrate_rejects_async_bind_only():
     import asyncio
 

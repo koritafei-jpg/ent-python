@@ -143,6 +143,10 @@ def bind_client(
 
     默认 ``lifecycle="app"`` 且不在退出时 ``close()``；测试可设 ``close_on_exit=True``。
     """
+    if not isinstance(client, Client):
+        raise TypeError(
+            "bind_client() requires sync Client; use async_bind_client() for AsyncClient"
+        )
     prev_hooks = list(client._hooks)
     if hooks:
         client._hooks = list(hooks) + prev_hooks
@@ -221,6 +225,10 @@ async def async_bind_client(
     close_on_exit: bool = False,
 ) -> AsyncIterator[AsyncClient]:
     """绑定已有 ``AsyncClient``。"""
+    if not isinstance(client, AsyncClient):
+        raise TypeError(
+            "async_bind_client() requires AsyncClient; use bind_client() for sync Client"
+        )
     prev_hooks = list(client._hooks)
     if hooks:
         client._hooks = list(hooks) + prev_hooks

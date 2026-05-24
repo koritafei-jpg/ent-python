@@ -15,6 +15,9 @@ from entpy.privacy.policy import (
     decision_from_context,
     eval_mutation,
     eval_query,
+    mutation_rule,
+    query_rule,
+    rule,
     with_decision,
 )
 
@@ -33,5 +36,8 @@ __all__ = [
     "decision_from_context",
     "eval_mutation",
     "eval_query",
+    "mutation_rule",
+    "query_rule",
+    "rule",
     "with_decision",
 ]

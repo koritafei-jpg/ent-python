@@ -50,6 +50,7 @@ MutationPolicy = list[MutationRule]
 class Policy:
     query: QueryPolicy | None = None
     mutation: MutationPolicy | None = None
+    deny_by_default: bool = False
 
 
 def always_allow() -> MutationRule:
@@ -74,28 +75,52 @@ def always_deny() -> MutationRule:
     return _R()
 
 
-def _eval_rules(rules: list, ctx: dict[str, Any], obj: Any, method: str) -> None:
+def _eval_rules(
+    rules: list,
+    ctx: dict[str, Any],
+    obj: Any,
+    method: str,
+    *,
+    deny_by_default: bool = False,
+) -> None:
     for rule in rules:
+        handler = getattr(rule, method, None)
+        if handler is None:
+            continue
         try:
-            getattr(rule, method)(ctx, obj)
+            handler(ctx, obj)
         except Allow:
             return
         except Deny as e:
-            raise NotAllowedError(str(e)) from e
+            raise NotAllowedError(str(e) or "operation denied by policy") from e
         except Skip:
             continue
+    if deny_by_default:
+        raise NotAllowedError("operation denied by default policy")
 
 
 def eval_query(ctx: dict[str, Any], policies: list[Policy], query: Any) -> None:
     for p in policies:
         if p.query:
-            _eval_rules(p.query, ctx, query, "eval_query")
+            _eval_rules(
+                p.query,
+                ctx,
+                query,
+                "eval_query",
+                deny_by_default=p.deny_by_default,
+            )
 
 
 def eval_mutation(ctx: dict[str, Any], policies: list[Policy], mutation: Mutation) -> None:
     for p in policies:
         if p.mutation:
-            _eval_rules(p.mutation, ctx, mutation, "eval_mutation")
+            _eval_rules(
+                p.mutation,
+                ctx,
+                mutation,
+                "eval_mutation",
+                deny_by_default=p.deny_by_default,
+            )
 
 
 _CTX_KEY = "_entpy_privacy_decision"
@@ -114,12 +139,24 @@ def decision_from_context(ctx: dict[str, Any]) -> Decision | None:
     return None
 
 
-def rule(fn: Callable[[dict[str, Any], Mutation], None]) -> MutationRule:
+def mutation_rule(
+    fn: Callable[[dict[str, Any], Mutation], None],
+) -> MutationRule:
     class _R:
         def eval_mutation(self, ctx: dict[str, Any], mutation: Mutation) -> None:
             fn(ctx, mutation)
 
+    return _R()
+
+
+def query_rule(fn: Callable[[dict[str, Any], Any], None]) -> QueryRule:
+    class _R:
         def eval_query(self, ctx: dict[str, Any], query: Any) -> None:
             fn(ctx, query)
 
     return _R()
+
+
+def rule(fn: Callable[[dict[str, Any], Mutation], None]) -> MutationRule:
+    """``mutation_rule`` 别名，仅用于写路径策略。"""
+    return mutation_rule(fn)

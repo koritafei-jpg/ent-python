@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
 
 from entpy.dialect.sqlalchemy.async_driver import AsyncSQLAlchemyDriver
 from entpy.dialect.sqlalchemy.metadata import build_metadata
@@ -16,7 +17,6 @@ from entpy.runtime.builders_async import (
 )
 from entpy.runtime.client import NodeClient, _snake
 from entpy.runtime.registry import Registry
-from entpy.runtime.spec_helpers import create_spec, update_spec
 from entpy.schema.base import Schema
 from entpy.runtime.predicate import PredicateFactory
 
@@ -55,6 +55,45 @@ class AsyncClient:
                 from sqlalchemy import text
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             await _run(conn)
+
+    @asynccontextmanager
+    async def ascope(self, ctx: dict[str, Any] | None = None) -> AsyncIterator[AsyncClient]:
+        """将本 AsyncClient 绑定到当前异步上下文；不释放连接池。"""
+        from entpy.active.context import (
+            push_scope_ctx,
+            reset_async_client,
+            reset_scope_ctx,
+            set_async_client,
+        )
+
+        ctx_token = push_scope_ctx(ctx) if ctx else None
+        token = set_async_client(self)
+        try:
+            yield self
+        finally:
+            reset_async_client(token)
+            if ctx_token is not None:
+                reset_scope_ctx(ctx_token)
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[None]:
+        """块内所有写操作共用同一 async session，块末一次 commit。"""
+        from entpy.runtime.session_scope import async_transaction
+
+        async with async_transaction(self._driver):
+            yield
+
+    async def aclose(self) -> None:
+        if self._registry.storage == "gremlin":
+            self._driver.close()
+        elif hasattr(self._driver, "engine"):
+            await self._driver.engine.dispose()
+
+    def traverse(self, entity: Any, edge: str | None = None) -> Any:
+        from entpy.runtime.traverse import AsyncTraverseChain
+
+        hops = [edge] if edge else None
+        return AsyncTraverseChain(self, entity, hops)
 
     @classmethod
     def open(

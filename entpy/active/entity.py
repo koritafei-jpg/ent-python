@@ -2,11 +2,33 @@
 
 from __future__ import annotations
 
+import copy
+import json
 from typing import Any
 
 from entpy.active.context import get_async_client, get_client
 from entpy.runtime.entity import Entity
 from entpy.schema.base import Schema
+from entpy.schema.field import FieldType
+
+
+def _json_field_names(schema: type[Schema]) -> frozenset[str]:
+    names: set[str] = set()
+    for f in schema.fields():
+        d = getattr(f, "_d", None)
+        if d is not None and d.typ == FieldType.JSON:
+            names.add(d.name)
+    return frozenset(names)
+
+
+def _json_snapshot(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def _copy_mutable(value: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return copy.deepcopy(value)
+    return value
 
 
 class ActiveEntity(Entity):
@@ -25,11 +47,19 @@ class ActiveEntity(Entity):
         object.__setattr__(self, "_new", _new)
         object.__setattr__(self, "_async", _async)
         object.__setattr__(self, "_dirty", set())
+        object.__setattr__(self, "_json_snapshots", {})
+        self._refresh_json_snapshots()
 
     @classmethod
     def from_entity(cls, entity: Entity, *, _new: bool = False, _async: bool = False) -> ActiveEntity:
-        inst = cls(entity._schema, entity._data, entity._client, _new=_new, _async=_async)
-        object.__setattr__(inst, "_edges", dict(entity._edges))
+        data = dict(entity._data)
+        for name in _json_field_names(entity._schema):
+            if name in data:
+                data[name] = copy.deepcopy(data[name])
+        inst = cls(entity._schema, data, entity._client, _new=_new, _async=_async)
+        object.__setattr__(
+            inst, "_edges", {name: list(rows) for name, rows in entity._edges.items()}
+        )
         return inst
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -37,9 +67,29 @@ class ActiveEntity(Entity):
             object.__setattr__(self, name, value)
             return
         old = self._data.get(name)
+        value = _copy_mutable(value)
         self._data[name] = value
         if old != value and not self._new:
             self._dirty.add(name)
+            if name in _json_field_names(self._schema):
+                self._json_snapshots[name] = _json_snapshot(value)
+
+    def _refresh_json_snapshots(self) -> None:
+        snaps: dict[str, str] = {}
+        for name in _json_field_names(self._schema):
+            if name in self._data:
+                snaps[name] = _json_snapshot(self._data[name])
+        object.__setattr__(self, "_json_snapshots", snaps)
+
+    def _mark_json_dirty_fields(self) -> None:
+        if self._new:
+            return
+        for name in _json_field_names(self._schema):
+            if name not in self._data:
+                continue
+            current = _json_snapshot(self._data[name])
+            if self._json_snapshots.get(name) != current:
+                self._dirty.add(name)
 
     def save(self) -> ActiveEntity:
         if self._async:
@@ -50,17 +100,23 @@ class ActiveEntity(Entity):
             object.__setattr__(self, "_new", False)
             self._data.update(saved._data)
             self._dirty.clear()
+            self._refresh_json_snapshots()
             object.__setattr__(self, "_client", client)
             return self
+        self._mark_json_dirty_fields()
         if not self._dirty:
             return self
+        from entpy.runtime.validation import reject_immutable_updates
+
+        pending = {name: self._data[name] for name in self._dirty if name in self._data}
+        reject_immutable_updates(client._registry, self._schema, pending)
         builder = client.update(self._schema, self.id)
-        for name in self._dirty:
-            if name in self._data:
-                builder.set(name, self._data[name])
+        for name, value in pending.items():
+            builder.set(name, value)
         updated = builder.save()
         self._data.update(updated._data)
         self._dirty.clear()
+        self._refresh_json_snapshots()
         return self
 
     async def persist(self) -> ActiveEntity:
@@ -70,18 +126,24 @@ class ActiveEntity(Entity):
             object.__setattr__(self, "_new", False)
             self._data.update(saved._data)
             self._dirty.clear()
+            self._refresh_json_snapshots()
             object.__setattr__(self, "_client", client)
             object.__setattr__(self, "_async", True)
             return self
+        self._mark_json_dirty_fields()
         if not self._dirty:
             return self
+        from entpy.runtime.validation import reject_immutable_updates
+
+        pending = {name: self._data[name] for name in self._dirty if name in self._data}
+        reject_immutable_updates(client._registry, self._schema, pending)
         builder = client.update(self._schema, self.id)
-        for name in self._dirty:
-            if name in self._data:
-                builder.set(name, self._data[name])
+        for name, value in pending.items():
+            builder.set(name, value)
         updated = await builder.save()
         self._data.update(updated._data)
         self._dirty.clear()
+        self._refresh_json_snapshots()
         return self
 
     def delete(self) -> None:

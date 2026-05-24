@@ -6,23 +6,28 @@ import json
 from typing import Any
 
 from entpy.dialect.sqlalchemy import sqlgraph
-from entpy.dialect.sqlalchemy.spec import CreateSpec, DeleteSpec, QuerySpec, UpdateSpec
+from entpy.dialect.sqlalchemy.spec import DeleteSpec
 from entpy.entql.filter import entql_to_predicates
+from entpy.observer.hooks import notify_after_observers
+from entpy.privacy.policy import eval_mutation, eval_query
+from entpy.runtime.entity import Entity
+from entpy.runtime.errors import NotFoundError
+from entpy.runtime.hook import chain_hooks
+from entpy.runtime.interceptor import QueryRequest
+from entpy.runtime.mutation import Mutation, Op
+from entpy.runtime.predicate import Predicate
+from entpy.runtime.query_exec import execute_query_sync
+from entpy.runtime.spec_helpers import create_spec, update_spec
+from entpy.runtime.validation import (
+    merge_mutation_into_builder,
+    reject_immutable_updates,
+    snapshot_edges,
+)
+from entpy.schema.base import Schema, View
 
 
 def _is_gremlin(client: Any) -> bool:
     return client._driver.dialect() == "gremlin"
-
-from entpy.schema.base import Schema, View
-from entpy.runtime.entity import Entity
-from entpy.runtime.errors import NotFoundError
-from entpy.runtime.hook import chain_hooks
-from entpy.observer.hooks import notify_after_observers
-from entpy.runtime.interceptor import QueryRequest, chain_interceptors
-from entpy.runtime.mutation import Mutation, Op
-from entpy.privacy.policy import eval_mutation, eval_query
-from entpy.runtime.predicate import Predicate
-from entpy.runtime.spec_helpers import create_spec, update_spec  # noqa: F401
 
 
 class CreateBuilder:
@@ -51,8 +56,9 @@ class CreateBuilder:
                 self._fields[f.name] = f.default
             if f.name not in self._fields and f.default_func:
                 self._fields[f.name] = f.default_func()
-            for v in f.validators:
-                v(self._fields.get(f.name))
+            if f.name in self._fields:
+                for v in f.validators:
+                    v(self._fields.get(f.name))
             if f.typ == FieldType.VECTOR and f.name in self._fields:
                 val = self._fields[f.name]
                 if isinstance(val, list) and self._client._driver.dialect() == "sqlite":
@@ -60,10 +66,17 @@ class CreateBuilder:
 
     def save(self) -> Entity:
         self._validate_fields()
-        mutation = Mutation(self._schema, Op.CREATE, fields=dict(self._fields), edges=dict(self._edges))
+        mutation = Mutation(
+            self._schema,
+            Op.CREATE,
+            fields=dict(self._fields),
+            edges=snapshot_edges(self._edges),
+        )
         mutation = chain_hooks(self._client._hooks, mutation)
-        self._fields.update(mutation.fields)
-        eval_mutation(self._client._ctx, self._client._policies, mutation)
+        merge_mutation_into_builder(mutation, fields=self._fields, edges=self._edges)
+        from entpy.active.context import get_effective_ctx
+
+        eval_mutation(get_effective_ctx(self._client), self._client._policies, mutation)
         spec = create_spec(self._client._registry, self._schema, self._fields, self._edges)
         with self._client._driver.session() as session:
             if _is_gremlin(self._client):
@@ -106,41 +119,14 @@ class QueryBuilder:
         return self
 
     def _run_query(self, request: QueryRequest) -> list[dict]:
-        label = self._client._registry.label_for(request.schema)
-
-        def execute(req: QueryRequest) -> list[dict]:
-            effective_limit = req.limit if req.limit is not None else self._limit
-            with_edges = req.with_edges if req.with_edges else list(self._with)
-            with self._client._driver.session() as session:
-                if _is_gremlin(self._client):
-                    from entpy.dialect.gremlin import graph_ops
-
-                    spec = QuerySpec(
-                        table=label,
-                        limit=effective_limit,
-                        with_edges=with_edges,
-                    )
-                    return graph_ops.query_nodes(
-                        session.g,
-                        self._client._registry,
-                        spec,
-                        gremlin_preds=list(self._predicates),
-                    )
-                table = self._client._registry.table_for(request.schema)
-                sql_preds = [p.apply(table) for p in self._predicates]
-                spec = QuerySpec(
-                    table=table.name,
-                    predicates=sql_preds,
-                    limit=effective_limit,
-                    with_edges=with_edges,
-                )
-                return sqlgraph.query_nodes(
-                    session, self._client._registry.tables, spec
-                )
-
-        if self._client._interceptors:
-            return chain_interceptors(self._client._interceptors, execute, request)
-        return execute(request)
+        return execute_query_sync(
+            self._client,
+            self._schema,
+            self._predicates,
+            limit=self._limit,
+            with_edges=list(self._with),
+            request=request,
+        )
 
     def all(self) -> list[Entity]:
         request = QueryRequest(
@@ -148,12 +134,19 @@ class QueryBuilder:
             limit=self._limit,
             with_edges=list(self._with),
         )
-        eval_query(self._client._ctx, self._client._policies, request)
+        from entpy.active.context import get_effective_ctx
+
+        eval_query(get_effective_ctx(self._client), self._client._policies, request)
         rows = self._run_query(request)
         return [Entity(self._schema, r, self._client) for r in rows]
 
     def only(self) -> Entity:
-        rows = self.limit(2).all()
+        saved_limit = self._limit
+        self._limit = 2
+        try:
+            rows = self.all()
+        finally:
+            self._limit = saved_limit
         if not rows:
             raise NotFoundError(f"{self._schema.type_name()}: not found")
         if len(rows) > 1:
@@ -161,7 +154,12 @@ class QueryBuilder:
         return rows[0]
 
     def first(self) -> Entity | None:
-        rows = self.limit(1).all()
+        saved_limit = self._limit
+        self._limit = 1
+        try:
+            rows = self.all()
+        finally:
+            self._limit = saved_limit
         return rows[0] if rows else None
 
 
@@ -184,26 +182,44 @@ class UpdateBuilder:
         return self
 
     def save(self) -> Entity:
+        reject_immutable_updates(self._client._registry, self._schema, self._fields)
         mutation = Mutation(
-            self._schema, Op.UPDATE_ONE, id=self._id, fields=self._fields, edges=self._edges
+            self._schema,
+            Op.UPDATE_ONE,
+            id=self._id,
+            fields=self._fields,
+            edges=snapshot_edges(self._edges),
         )
         mutation = chain_hooks(self._client._hooks, mutation)
-        eval_mutation(self._client._ctx, self._client._policies, mutation)
+        merge_mutation_into_builder(mutation, fields=self._fields, edges=self._edges)
+        from entpy.active.context import get_effective_ctx
+
+        eval_mutation(get_effective_ctx(self._client), self._client._policies, mutation)
         spec = update_spec(self._client._registry, self._schema, self._id, self._fields, self._edges)
         with self._client._driver.session() as session:
             if _is_gremlin(self._client):
                 from entpy.dialect.gremlin import graph_ops
 
+                label = self._client._registry.label_for(self._schema)
                 graph_ops.update_node(session.g, self._client._registry, spec)
+                row = graph_ops.get_by_id(session.g, label, self._id)
             else:
-                sqlgraph.update_node(session, self._client._registry.tables, spec)
+                row = sqlgraph.update_node(
+                    session, self._client._registry.tables, spec
+                )
+        if row is None:
+            raise NotFoundError(f"{self._schema.type_name()}: not found")
         notify_after_observers(
             self._client._observers,
-            Mutation(self._schema, Op.UPDATE_ONE, id=self._id, fields=dict(self._fields)),
+            Mutation(
+                self._schema,
+                Op.UPDATE_ONE,
+                id=self._id,
+                fields=dict(self._fields),
+                edges=dict(self._edges),
+            ),
         )
-        return self._client.query(self._schema).where(
-            self._client.F(self._schema).id.eq(self._id)
-        ).only()
+        return Entity(self._schema, row, self._client)
 
 
 class DeleteBuilder:
@@ -225,9 +241,8 @@ class DeleteBuilder:
 
     def execute(self) -> int:
         label = self._client._registry.label_for(self._schema)
-        if self._predicates and not self._ids:
-            rows = self._client.query(self._schema).where(*self._predicates).all()
-            self._ids = [r.id for r in rows]
+        if self._ids and self._predicates:
+            raise ValueError("delete: use one(id) or where(), not both")
         if not self._ids and not self._predicates:
             raise ValueError("delete requires one(id) or where")
         op = Op.DELETE_ONE if len(self._ids) == 1 else Op.DELETE
@@ -237,7 +252,9 @@ class DeleteBuilder:
             id=self._ids[0] if len(self._ids) == 1 else None,
         )
         mutation = chain_hooks(self._client._hooks, mutation)
-        eval_mutation(self._client._ctx, self._client._policies, mutation)
+        from entpy.active.context import get_effective_ctx
+
+        eval_mutation(get_effective_ctx(self._client), self._client._policies, mutation)
         with self._client._driver.session() as session:
             if _is_gremlin(self._client):
                 from entpy.dialect.gremlin import graph_ops
@@ -250,5 +267,6 @@ class DeleteBuilder:
                 sql_preds = [p.apply(table) for p in self._predicates] if not self._ids else []
                 spec = DeleteSpec(table=table.name, ids=self._ids, predicates=sql_preds)
                 count = sqlgraph.delete_nodes(session, self._client._registry.tables, spec)
-        notify_after_observers(self._client._observers, mutation)
+        if count > 0:
+            notify_after_observers(self._client._observers, mutation)
         return count

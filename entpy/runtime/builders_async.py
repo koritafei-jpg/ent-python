@@ -5,27 +5,41 @@ from __future__ import annotations
 from typing import Any
 
 from entpy.dialect.sqlalchemy import sqlgraph_async
-from entpy.dialect.sqlalchemy.spec import DeleteSpec, QuerySpec
+from entpy.dialect.sqlalchemy.spec import DeleteSpec
 from entpy.entql.filter import entql_to_predicates
+from entpy.observer.hooks import notify_after_observers
+from entpy.privacy.policy import eval_mutation, eval_query
 from entpy.runtime.builders import CreateBuilder, UpdateBuilder, _is_gremlin
 from entpy.runtime.entity import Entity
 from entpy.runtime.errors import NotFoundError
-from entpy.runtime.hook import chain_hooks
-from entpy.observer.hooks import notify_after_observers
+from entpy.runtime.hook import chain_hooks_async
 from entpy.runtime.interceptor import QueryRequest
 from entpy.runtime.mutation import Mutation, Op
-from entpy.runtime.spec_helpers import create_spec, update_spec
-from entpy.privacy.policy import eval_mutation, eval_query
 from entpy.runtime.predicate import Predicate
+from entpy.runtime.query_exec import execute_query_async
+from entpy.runtime.spec_helpers import create_spec, update_spec
+from entpy.runtime.validation import (
+    merge_mutation_into_builder,
+    reject_immutable_updates,
+    snapshot_edges,
+)
 from entpy.schema.base import Schema
 
 
 class AsyncCreateBuilder(CreateBuilder):
     async def save(self) -> Entity:
         self._validate_fields()
-        mutation = Mutation(self._schema, Op.CREATE, fields=dict(self._fields), edges=dict(self._edges))
-        mutation = chain_hooks(self._client._hooks, mutation)
-        eval_mutation(self._client._ctx, self._client._policies, mutation)
+        mutation = Mutation(
+            self._schema,
+            Op.CREATE,
+            fields=dict(self._fields),
+            edges=snapshot_edges(self._edges),
+        )
+        mutation = await chain_hooks_async(self._client._hooks, mutation)
+        merge_mutation_into_builder(mutation, fields=self._fields, edges=self._edges)
+        from entpy.active.context import get_effective_ctx
+
+        eval_mutation(get_effective_ctx(self._client), self._client._policies, mutation)
         spec = create_spec(self._client._registry, self._schema, self._fields, self._edges)
         if _is_gremlin(self._client):
             from entpy.dialect.gremlin import graph_ops
@@ -47,32 +61,48 @@ class AsyncCreateBuilder(CreateBuilder):
 
 class AsyncUpdateBuilder(UpdateBuilder):
     async def save(self) -> Entity:
+        reject_immutable_updates(self._client._registry, self._schema, self._fields)
         mutation = Mutation(
-            self._schema, Op.UPDATE_ONE, id=self._id, fields=self._fields, edges=self._edges
+            self._schema,
+            Op.UPDATE_ONE,
+            id=self._id,
+            fields=self._fields,
+            edges=snapshot_edges(self._edges),
         )
-        mutation = chain_hooks(self._client._hooks, mutation)
-        eval_mutation(self._client._ctx, self._client._policies, mutation)
+        mutation = await chain_hooks_async(self._client._hooks, mutation)
+        merge_mutation_into_builder(mutation, fields=self._fields, edges=self._edges)
+        from entpy.active.context import get_effective_ctx
+
+        eval_mutation(get_effective_ctx(self._client), self._client._policies, mutation)
         spec = update_spec(self._client._registry, self._schema, self._id, self._fields, self._edges)
         if _is_gremlin(self._client):
             from entpy.dialect.gremlin import graph_ops
 
-            await self._client._driver.run(
-                lambda: graph_ops.update_node(
-                    self._client._driver.g, self._client._registry, spec
-                )
-            )
+            label = self._client._registry.label_for(self._schema)
+
+            def _run():
+                graph_ops.update_node(self._client._driver.g, self._client._registry, spec)
+                return graph_ops.get_by_id(self._client._driver.g, label, self._id)
+
+            row = await self._client._driver.run(_run)
         else:
             async with self._client._driver.session() as session:
-                await sqlgraph_async.update_node(
+                row = await sqlgraph_async.update_node(
                     session, self._client._registry.tables, spec
                 )
+        if row is None:
+            raise NotFoundError(f"{self._schema.type_name()}: not found")
         notify_after_observers(
             self._client._observers,
-            Mutation(self._schema, Op.UPDATE_ONE, id=self._id, fields=dict(self._fields)),
+            Mutation(
+                self._schema,
+                Op.UPDATE_ONE,
+                id=self._id,
+                fields=dict(self._fields),
+                edges=dict(self._edges),
+            ),
         )
-        return await self._client.query(self._schema).where(
-            self._client.F(self._schema).id.eq(self._id)
-        ).only()
+        return Entity(self._schema, row, self._client)
 
 
 class AsyncQueryBuilder:
@@ -105,50 +135,48 @@ class AsyncQueryBuilder:
             limit=self._limit,
             with_edges=list(self._with),
         )
-        eval_query(self._client._ctx, self._client._policies, request)
-        label = self._client._registry.label_for(self._schema)
-        if _is_gremlin(self._client):
-            from entpy.dialect.gremlin import graph_ops
+        from entpy.active.context import get_effective_ctx
 
-            spec = QuerySpec(
-                table=label,
-                limit=self._limit,
-                with_edges=list(self._with),
-            )
-            rows = await self._client._driver.run(
-                lambda: graph_ops.query_nodes(
-                    self._client._driver.g,
-                    self._client._registry,
-                    spec,
-                    gremlin_preds=list(self._predicates),
-                )
-            )
-        else:
-            table = self._client._registry.table_for(self._schema)
-            sql_preds = [p.apply(table) for p in self._predicates]
-            spec = QuerySpec(
-                table=table.name,
-                predicates=sql_preds,
-                limit=self._limit,
-                with_edges=list(self._with),
-            )
-            async with self._client._driver.session() as session:
-                rows = await sqlgraph_async.query_nodes(
-                    session, self._client._registry.tables, spec
-                )
+        eval_query(get_effective_ctx(self._client), self._client._policies, request)
+        rows = await execute_query_async(
+            self._client,
+            self._schema,
+            self._predicates,
+            limit=self._limit,
+            with_edges=list(self._with),
+            request=request,
+        )
         return [Entity(self._schema, r, self._client) for r in rows]
 
     async def only(self) -> Entity:
-        rows = await self.limit(2).all()
+        saved_limit = self._limit
+        self._limit = 2
+        try:
+            rows = await self.all()
+        finally:
+            self._limit = saved_limit
         if not rows:
             raise NotFoundError(f"{self._schema.type_name()}: not found")
         if len(rows) > 1:
             raise NotFoundError(f"{self._schema.type_name()}: not unique")
         return rows[0]
 
+    async def first(self) -> Entity | None:
+        saved_limit = self._limit
+        self._limit = 1
+        try:
+            rows = await self.all()
+        finally:
+            self._limit = saved_limit
+        return rows[0] if rows else None
+
 
 class AsyncDeleteBuilder:
     def __init__(self, client: Any, schema: type[Schema]) -> None:
+        from entpy.schema.base import View
+
+        if issubclass(schema, View):
+            raise TypeError(f"{schema.type_name()} is a View")
         self._client = client
         self._schema = schema
         self._ids: list[int] = []
@@ -163,24 +191,39 @@ class AsyncDeleteBuilder:
         return self
 
     async def execute(self) -> int:
-        if self._predicates and not self._ids:
-            rows = await self._client.query(self._schema).where(*self._predicates).all()
-            self._ids = [r.id for r in rows]
-        if not self._ids:
-            raise ValueError("delete requires one(id) or where")
         label = self._client._registry.label_for(self._schema)
+        if self._ids and self._predicates:
+            raise ValueError("delete: use one(id) or where(), not both")
+        if not self._ids and not self._predicates:
+            raise ValueError("delete requires one(id) or where")
+        op = Op.DELETE_ONE if len(self._ids) == 1 else Op.DELETE
+        mutation = Mutation(
+            self._schema,
+            op,
+            id=self._ids[0] if len(self._ids) == 1 else None,
+        )
+        mutation = await chain_hooks_async(self._client._hooks, mutation)
+        from entpy.active.context import get_effective_ctx
+
+        eval_mutation(get_effective_ctx(self._client), self._client._policies, mutation)
         if _is_gremlin(self._client):
             from entpy.dialect.gremlin import graph_ops
 
-            spec = DeleteSpec(table=label, ids=self._ids)
-            return await self._client._driver.run(
+            preds = list(self._predicates) if not self._ids else []
+            spec = DeleteSpec(table=label, ids=self._ids, predicates=preds)
+            count = await self._client._driver.run(
                 lambda: graph_ops.delete_nodes(
                     self._client._driver.g, self._client._registry, spec
                 )
             )
-        table = self._client._registry.table_for(self._schema)
-        spec = DeleteSpec(table=table.name, ids=self._ids)
-        async with self._client._driver.session() as session:
-            return await sqlgraph_async.delete_nodes(
-                session, self._client._registry.tables, spec
-            )
+        else:
+            table = self._client._registry.table_for(self._schema)
+            sql_preds = [p.apply(table) for p in self._predicates] if not self._ids else []
+            spec = DeleteSpec(table=table.name, ids=self._ids, predicates=sql_preds)
+            async with self._client._driver.session() as session:
+                count = await sqlgraph_async.delete_nodes(
+                    session, self._client._registry.tables, spec
+                )
+        if count > 0:
+            notify_after_observers(self._client._observers, mutation)
+        return count

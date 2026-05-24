@@ -1,4 +1,4 @@
-"""使用 ContextVar 保存当前 bind 的 Client。"""
+"""使用 ContextVar 保存当前 bind 的 Client 与请求级 ctx。"""
 
 from __future__ import annotations
 
@@ -7,9 +7,30 @@ from typing import Any
 
 _client_var: ContextVar[Any | None] = ContextVar("entpy_active_client", default=None)
 _async_client_var: ContextVar[Any | None] = ContextVar("entpy_active_async_client", default=None)
+_scope_ctx_var: ContextVar[dict[str, Any] | None] = ContextVar("entpy_scope_ctx", default=None)
+
+
+def get_effective_ctx(client: Any) -> dict[str, Any]:
+    """Client 基础 ctx 与 scope 叠加层合并（并发安全）。"""
+    overlay = _scope_ctx_var.get()
+    base = client._ctx
+    if not overlay:
+        return base
+    return {**base, **overlay}
+
+
+def push_scope_ctx(overlay: dict[str, Any]) -> Any:
+    prev = _scope_ctx_var.get() or {}
+    return _scope_ctx_var.set({**prev, **overlay})
+
+
+def reset_scope_ctx(token: Any) -> None:
+    _scope_ctx_var.reset(token)
 
 
 def set_client(client: Any) -> Any:
+    if _async_client_var.get() is not None:
+        raise RuntimeError("cannot nest bind() inside async_bind()")
     return _client_var.set(client)
 
 
@@ -27,6 +48,8 @@ def get_client() -> Any:
 
 
 def set_async_client(client: Any) -> Any:
+    if _client_var.get() is not None:
+        raise RuntimeError("cannot nest async_bind() inside bind()")
     return _async_client_var.set(client)
 
 
@@ -45,8 +68,10 @@ def get_async_client() -> Any:
 
 def get_bound_client() -> Any:
     """返回当前 bind 的同步或异步 Client（供 F() 等使用）。"""
-    async_client = _async_client_var.get()
     sync_client = _client_var.get()
+    async_client = _async_client_var.get()
+    if sync_client is not None and async_client is not None:
+        raise RuntimeError("sync bind() and async_bind() are both active")
     if sync_client is not None:
         return sync_client
     if async_client is not None:

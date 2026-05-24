@@ -1,7 +1,7 @@
 from entpy.runtime.client import Client
 from entpy.runtime.async_client import AsyncClient
 from entpy.runtime.entity import Entity
-from entpy.runtime.hook import Hook, hook, chain_hooks
+from entpy.runtime.hook import AsyncHook, Hook, async_hook, chain_hooks, chain_hooks_async, hook
 from entpy.observer import Observer, observes
 from entpy.runtime.interceptor import Interceptor
 from entpy.runtime.predicate import F, Predicate, PredicateFactory
@@ -16,8 +16,11 @@ __all__ = [
     "PredicateFactory",
     "Registry",
     "Hook",
+    "AsyncHook",
     "hook",
+    "async_hook",
     "chain_hooks",
+    "chain_hooks_async",
     "Interceptor",
     "Observer",
     "observes",

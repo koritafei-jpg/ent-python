@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from entpy.active.context import get_client
 from entpy.active.entity import ActiveEntity
 from entpy.runtime.predicate import Predicate
 from entpy.schema.base import Schema

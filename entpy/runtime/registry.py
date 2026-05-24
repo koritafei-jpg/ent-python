@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy import Table
 
@@ -20,6 +20,12 @@ class Registry:
     nodes: dict[type[Schema], NodeDescriptor]
     _predicates: dict[type[Schema], PredicateFactory]
     storage: str = "sql"
+    _edge_cache: dict[tuple[type[Schema], str], ResolvedEdge | None] = field(
+        default_factory=dict, repr=False
+    )
+    _table_schema_cache: dict[str, type[Schema] | None] = field(
+        default_factory=dict, repr=False
+    )
 
     @classmethod
     def from_schemas(cls, schemas: list[type[Schema]], *, storage: str = "sql") -> Registry:
@@ -55,7 +61,22 @@ class Registry:
         return [e for e in self.graph.edges if e.owner.name == node.name]
 
     def resolve_edge(self, schema: type[Schema], edge_name: str) -> ResolvedEdge | None:
+        key = (schema, edge_name)
+        if key in self._edge_cache:
+            return self._edge_cache[key]
         for e in self.edges_for(schema):
             if e.name == edge_name:
+                self._edge_cache[key] = e
                 return e
+        self._edge_cache[key] = None
+        return None
+
+    def schema_for_table(self, table_name: str) -> type[Schema] | None:
+        if table_name in self._table_schema_cache:
+            return self._table_schema_cache[table_name]
+        for st, node in self.nodes.items():
+            if node.resolved_table() == table_name:
+                self._table_schema_cache[table_name] = st
+                return st
+        self._table_schema_cache[table_name] = None
         return None

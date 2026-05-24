@@ -59,8 +59,9 @@ def build_graph(schemas: list[type[Schema]]) -> Graph:
             m2m = _try_m2m(node, ed, peer, m2m_keys)
             if m2m:
                 jt, cols, edge_rec = m2m
-                join_tables[jt] = cols
-                if edge_rec not in [(e.owner.name, e.name) for e in resolved]:
+                if jt is not None:
+                    join_tables[jt] = cols
+                if edge_rec is not None:
                     resolved.append(edge_rec)
                 continue
 
@@ -95,7 +96,37 @@ def build_graph(schemas: list[type[Schema]]) -> Graph:
                     )
                 )
 
+    resolved = _add_m2m_mirror_edges(resolved)
     return Graph(nodes=by_name, edges=resolved, join_tables=join_tables)
+
+
+def _add_m2m_mirror_edges(resolved: list[ResolvedEdge]) -> list[ResolvedEdge]:
+    """为 M2M 关系补充对端节点的遍历边（Group.users 等）。"""
+    out = list(resolved)
+    seen = {(e.owner.name, e.name) for e in resolved}
+    for e in resolved:
+        if e.rel != RelType.M2M or not e.ref:
+            continue
+        mirror_name = e.ref
+        key = (e.peer.name, mirror_name)
+        if key in seen:
+            continue
+        peer_col, owner_col = e.join_columns
+        out.append(
+            ResolvedEdge(
+                name=mirror_name,
+                rel=RelType.M2M,
+                inverse=False,
+                owner=e.peer,
+                peer=e.owner,
+                ref=e.name,
+                unique=False,
+                join_table=e.join_table,
+                join_columns=[owner_col, peer_col],
+            )
+        )
+        seen.add(key)
+    return out
 
 
 def _try_m2m(
@@ -110,9 +141,26 @@ def _try_m2m(
         inv = _find_edge(peer, ref_name)
         if inv is None:
             return None
+        # O2O/O2M 唯一边（如 Car.from_("owner").ref("cars")）不是 M2M
+        if ed.unique or inv.unique:
+            return None
         key = f"{min(node.name, peer.name)}:{max(node.name, peer.name)}:{ref_name}"
         if key in done:
-            return None
+            jt = _join_table(peer, node)
+            p_col = _singular(peer) + "_id"
+            o_col = _singular(node) + "_id"
+            mirror = ResolvedEdge(
+                name=ref_name,
+                rel=RelType.M2M,
+                inverse=False,
+                owner=peer,
+                peer=node,
+                ref=ed.name,
+                unique=False,
+                join_table=jt,
+                join_columns=[p_col, o_col],
+            )
+            return None, None, mirror
         done.add(key)
         jt = _join_table(peer, node)
         cols = (_singular(peer) + "_id", _singular(node) + "_id")
@@ -136,7 +184,21 @@ def _try_m2m(
                 return None  # 例如 Car.owner 引用 cars — Car 上是 FK，非 M2M
             key = f"{min(node.name, peer.name)}:{max(node.name, peer.name)}:{ed.name}"
             if key in done:
-                return None
+                jt = _join_table(peer, node)
+                p_col = _singular(peer) + "_id"
+                o_col = _singular(node) + "_id"
+                mirror = ResolvedEdge(
+                    name=ed.name,
+                    rel=RelType.M2M,
+                    inverse=False,
+                    owner=peer,
+                    peer=node,
+                    ref=ped.name,
+                    unique=False,
+                    join_table=jt,
+                    join_columns=[p_col, o_col],
+                )
+                return None, None, mirror
             done.add(key)
             jt = _join_table(peer, node)
             cols = (_singular(peer) + "_id", _singular(node) + "_id")

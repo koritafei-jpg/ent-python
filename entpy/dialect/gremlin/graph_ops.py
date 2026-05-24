@@ -44,9 +44,13 @@ def update_node(g, registry: Registry, spec: UpdateSpec) -> None:
 def delete_nodes(g, registry: Registry, spec: DeleteSpec) -> int:
     label = spec.table
     if spec.ids:
+        count = 0
         for vid in spec.ids:
-            g.V(vid).hasLabel(label).drop().iterate()
-        return len(spec.ids)
+            t = g.V(vid).hasLabel(label)
+            if t.hasNext():
+                t.drop().iterate()
+                count += 1
+        return count
     t = g.V().hasLabel(label)
     for pred in spec.predicates:
         if isinstance(pred, Predicate):
@@ -144,7 +148,17 @@ def _link_edge(g, registry: Registry, from_id: Any, edge: EdgeSpec) -> None:
     el = edge_label(re)
     for peer_id in edge.ids:
         if re.rel == RelType.M2M:
-            g.V(from_id).addE(el).to(g.V(peer_id)).iterate()
+            from gremlinpython.process.graph_traversal import __
+
+            exists = (
+                g.V(from_id)
+                .outE(el)
+                .where(__.inV().hasId(peer_id))
+                .hasNext()
+            )
+            if not exists:
+                g.V(from_id).addE(el).to(g.V(peer_id)).iterate()
+            continue
         elif re.fk_columns and re.rel in (RelType.O2M, RelType.M2O, RelType.O2O):
             fk = re.fk_columns[0]
             if re.rel == RelType.O2M and not re.inverse:

@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from contextlib import contextmanager
+from typing import Any, Iterator
 
 from entpy.dialect.sqlalchemy.driver import SQLAlchemyDriver
 from entpy.dialect.sqlalchemy.metadata import build_metadata
 from entpy.dialect.sqlalchemy.migrate import create_schema
-from entpy.dialect.sqlalchemy.spec import DeleteSpec, QuerySpec
-from entpy.dialect.sqlalchemy import sqlgraph
 from entpy.ir.policies import collect_interceptors, collect_policies, collect_runtime_hooks
 from entpy.runtime.builders import CreateBuilder, DeleteBuilder, QueryBuilder, UpdateBuilder
 from entpy.runtime.registry import Registry
 from entpy.runtime.predicate import PredicateFactory
-from entpy.runtime.spec_helpers import create_spec, update_spec
 from entpy.runtime.traverse import TraverseQuery
 from entpy.schema.base import Schema
 
@@ -38,6 +36,7 @@ class Client:
         self._policies = policies or []
         self._observers = observers or []
         self._ctx = ctx if ctx is not None else {}
+        self._node_clients: dict[str, NodeClient] = {}
 
     def migrate(self) -> None:
         """根据 Schema 图创建数据库表（DDL）。"""
@@ -45,6 +44,40 @@ class Client:
             return
         meta, _ = build_metadata(self._registry.graph)
         create_schema(self._driver.engine, meta)
+
+    @contextmanager
+    def scope(self, ctx: dict[str, Any] | None = None) -> Iterator[Client]:
+        """将本 Client 绑定到当前上下文（请求/任务）；不释放连接池。"""
+        from entpy.active.context import (
+            push_scope_ctx,
+            reset_client,
+            reset_scope_ctx,
+            set_client,
+        )
+
+        ctx_token = push_scope_ctx(ctx) if ctx else None
+        token = set_client(self)
+        try:
+            yield self
+        finally:
+            reset_client(token)
+            if ctx_token is not None:
+                reset_scope_ctx(ctx_token)
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """块内所有写操作共用同一 session，块末一次 commit。"""
+        from entpy.runtime.session_scope import sync_transaction
+
+        with sync_transaction(self._driver):
+            yield
+
+    def close(self) -> None:
+        """释放底层连接（Gremlin 关闭远程连接；SQL dispose engine）。"""
+        if self._registry.storage == "gremlin":
+            self._driver.close()
+        elif hasattr(self._driver, "engine"):
+            self._driver.engine.dispose()
 
     @classmethod
     def open(
@@ -131,9 +164,14 @@ class Client:
         return NodeClient(self, schema)
 
     def __getattr__(self, name: str) -> NodeClient:
+        cached = self._node_clients.get(name)
+        if cached is not None:
+            return cached
         for schema in self._registry.nodes:
             if _snake(schema.type_name()) == name:
-                return NodeClient(self, schema)
+                nc = NodeClient(self, schema)
+                self._node_clients[name] = nc
+                return nc
         raise AttributeError(name)
 
     def search(self, schema: type[Schema]):

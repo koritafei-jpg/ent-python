@@ -230,6 +230,7 @@ flowchart TD
 | SQL 单跳 | `resolve_edge` → FK 谓词 → `query_nodes` | **DB** |
 | Gremlin 单跳 | `graph_ops.traverse_neighbors` | **DB** |
 | Gremlin 多跳无过滤 | `traverse_chain` 一次遍历 | **DB**（fast path） |
+| SQL 多跳无过滤 | `traverse_chain_sql` 单次 JOIN | **DB**（fast path） |
 | SQL 多跳 | `all()` 循环 `_hop_neighbors` | **Python 逐跳** |
 | 带 `where()` 过滤 | 收集邻居 id → 二次 `QueryBuilder` | **混合** |
 
@@ -385,7 +386,83 @@ flowchart TB
 
 ---
 
-## 14. 简要结论
+## 14. 性能与并发：框架内置行为
+
+以下能力由运行时提供，**无需**在业务代码中自行管理 session 粒度、连接释放或 sync/async 双套遍历 API。
+
+### 14.1 Client 生命周期（P0）
+
+| 场景 | 用法 | 框架行为 |
+|------|------|----------|
+| 脚本 / 测试 / 单次任务 | `with bind(dsn, schemas=..., lifecycle="request"):`（默认） | 块内 `client.scope()` 绑定 ContextVar；退出时 `client.close()` 释放连接 |
+| Web / 长驻进程 | `app = Client.open(...)`；每请求 `with app.scope(ctx=...):` | 连接池在进程内复用；`scope` 只切换 ContextVar 与可选 `ctx`，不 dispose |
+| 显式释放 | `client.close()` / `await client.aclose()` | Gremlin 关闭远程连接；SQL `engine.dispose()` |
+
+`async_bind(..., lifecycle="request"|"app")` 与同步 `bind` 对称，异步侧用 `ascope()`。
+
+### 14.2 请求上下文与事务（P0–P1）
+
+- **ContextVar**：`scope()` / `ascope()` 将 Client 绑定到当前协程/线程；仍禁止 `bind()` 与 `async_bind()` 交叉嵌套。
+- **事务**：`with client.transaction():` / `async with client.transaction():` 块内所有 Builder 复用同一 ORM session，块末一次 commit；失败则 rollback。默认无事务时仍为「每操作独立 session+commit」。
+- **实现**：`entpy/runtime/session_scope.py` + 驱动 `session()` 在事务中返回复用 session。
+
+### 14.3 图遍历（P2）
+
+| 能力 | 同步 | 异步（`async_bind` / `AsyncClient`） |
+|------|------|--------------------------------------|
+| 链式 API | `alice.out("knows").out("knows").all()` | `await alice.out("knows").all()` |
+| Gremlin 多跳 | `traverse_chain` fast path（≥2 跳） | 同上，经 `driver.run` |
+| SQL 多跳 | Python 逐跳 + `load_neighbors_sql`；按 `id` 去重 | `sqlgraph_async.load_neighbors_sql`；同一 API |
+
+SQL 大规模多跳下推 JOIN/递归 CTE 为后续优化（P4），对用户 API 无影响。
+
+### 14.4 已内置的优化与健壮性
+
+| 主题 | 框架行为 |
+|------|----------|
+| 请求 `ctx` | `scope(ctx=...)` 通过 ContextVar 叠加，不修改 `Client._ctx`，并发安全 |
+| 异步 Hook | `chain_hooks_async` 在线程池执行，避免阻塞事件循环 |
+| 异步查询拦截器 | `execute_query_async` 与 sync 共用拦截器链 |
+| 按谓词删除 | 直接 `DELETE ... WHERE`，不先 `SELECT` 全表 |
+| `with_()` / 多跳遍历 | `load_neighbors_sql_batch` 按 owner 批量加载，每跳一次 SQL |
+| 未知边名 | `create_spec` / `update_spec` 对非法边名 `raise ValueError` |
+| Registry | 边解析与表→Schema 映射缓存 |
+
+### 14.5 已实现的进阶优化
+
+| 主题 | 框架行为 |
+|------|----------|
+| SQL 多跳 JOIN | `traverse_chain_sql`：≥2 跳且无 `where` 时单次 JOIN（与 Gremlin fast path 对称） |
+| Update 返回行 | `sqlgraph.update_node` 使用 `RETURNING`（不支持时回退 SELECT）；`save()` 不再二次 query |
+| 原生 AsyncHook | `@AsyncHook` + `chain_hooks_async`；`embed_on_save_async_hook` 使用 `await embedder.embed()` |
+| 外部 Embedding | `embed_on_save_hook(embedder)` + `EmbedAdapter`：支持 `embed_sync`/`embed`、可调用对象、`callable_embedder`；`bind(..., hooks=[...])` |
+| 混合 Hook 链 | 同步 `Hook` 在异步链中按 Hook 粒度 `to_thread`；全 `AsyncHook` 时无线程池；同步 Hook 内 `await` 后续 AsyncHook 时用 `_run_coro_sync`（已有 event loop 时在新线程执行） |
+| Active JSON 脏字段 | `save()` / `persist()` 前对 JSON 字段做快照比对；`dict`/`list` 赋值时深拷贝，原地修改 `metadata["k"]=…` 仍会标脏 |
+| Privacy 默认策略 | 默认 **fail-open**（无 Allow/Deny 则放行）；`Policy(deny_by_default=True)` 为 fail-closed；`mutation_rule()` / `query_rule()` 分离读写规则，`rule()` 仅写路径 |
+
+### 14.6 后续可优化项
+
+| 主题 | 说明 |
+|------|------|
+| 复杂边 SQL | 极少数边类型若无法 JOIN，回退 Python 逐跳 |
+| Gremlin Update | 已用 `get_by_id` 单次读取，非 RETURNING |
+
+### 14.7 集成示例（FastAPI 思路）
+
+```python
+app_client = Client.open(DSN, schemas=SCHEMAS)
+
+@app.middleware("http")
+async def entpy_ctx(request, call_next):
+    with app_client.scope(ctx={"user_id": request.state.user_id}):
+        return await call_next(request)
+
+# 应用关闭时：app_client.close()
+```
+
+---
+
+## 15. 简要结论
 
 1. **架构**：声明式 Schema → IR Graph → Registry → Builder → Dialect；Active 层是 Client 的语法糖。
 2. **谓词**：`F(User).age.gt(18)` **会下推**为 SQLAlchemy `WHERE` 或 Gremlin `has()`，由驱动生成最终 SQL/遍历，**不是**手写 SQL 字符串。

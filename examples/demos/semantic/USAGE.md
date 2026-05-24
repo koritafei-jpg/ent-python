@@ -95,7 +95,34 @@ class MyEmbedder:
 
 ## 写入时自动 Embedding（可选）
 
-需在打开连接时注册 hook；当前 `bind()` 尚未暴露 `hooks` 参数，可参考 `tests/search/test_embed_hook.py`，或扩展 `bind(..., hooks=[...])`。
+在 `bind` / `async_bind` 或 `Client.open_with` 注册 `embed_on_save_hook`，可对接任意外部 Embedding 服务：
+
+```python
+from entpy.active import bind, migrate
+from entpy.runtime.hooks import embed_on_save_hook
+from entpy.search import callable_embedder
+
+# 方式 1：直接传同步函数（HTTP 客户端封装）
+def my_embed_api(texts: list[str]) -> list[list[float]]:
+    # 调用 OpenAI / 本地模型 / 自建服务
+    ...
+
+with bind(dsn, schemas=SCHEMAS, hooks=[embed_on_save_hook(my_embed_api)]):
+    migrate()
+    Chunk.create(path="/a", nchunk=0, data="...")  # 保存前自动写向量字段
+
+# 方式 2：类实现 embed_sync / async embed
+class MyEmbedder:
+    def embed_sync(self, texts): ...
+    async def embed(self, texts): ...
+
+# 方式 3：callable_embedder 显式分离 sync/async
+emb = callable_embedder(embed_sync=..., embed=...)
+with bind(dsn, schemas=SCHEMAS, hooks=[embed_on_save_hook(emb)]):
+    ...
+```
+
+纯异步客户端用 `embed_on_save_hook(client, async_mode="async")` 或 `embed_on_save_async_hook(client)`。
 
 ## 相关测试
 

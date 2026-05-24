@@ -9,6 +9,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from entpy.runtime.session_scope import get_tx_session
+
 
 class SQLAlchemyDriver:
     def __init__(self, engine: Engine) -> None:
@@ -24,6 +26,10 @@ class SQLAlchemyDriver:
 
     @contextmanager
     def session(self):
+        tx = get_tx_session(async_=False)
+        if tx is not None:
+            yield tx
+            return
         session = self._session_factory()
         try:
             yield session

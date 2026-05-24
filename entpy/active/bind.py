@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager, contextmanager
-from typing import Any, AsyncIterator, Iterator
+from typing import Any, AsyncIterator, Iterator, Literal
 
-from entpy.active.context import (
-    reset_async_client,
-    reset_client,
-    set_async_client,
-    set_client,
-)
 from entpy.runtime.async_client import AsyncClient
 from entpy.runtime.client import Client
 from entpy.schema.base import Schema
+
+Lifecycle = Literal["request", "app"]
 
 
 @contextmanager
@@ -23,10 +19,16 @@ def bind(
     schemas: list[type[Schema]],
     storage: str = "sql",
     observer_packages: list[str] | None = None,
+    hooks: list[Any] | None = None,
     ctx: dict[str, Any] | None = None,
+    lifecycle: Lifecycle = "request",
     **engine_kw: Any,
 ) -> Iterator[Client]:
-    """绑定同步 Client；块内使用 User.create / User.query。"""
+    """绑定同步 Client；块内使用 User.create / User.query。
+
+    ``lifecycle="request"``（默认）：退出时释放连接，适合脚本与测试。
+    ``lifecycle="app"``：仅解除 ContextVar，连接由 ``Client.close()`` 释放，适合长驻进程。
+    """
     client = Client.open(
         dsn,
         schemas=schemas,
@@ -35,13 +37,12 @@ def bind(
         ctx=ctx,
         **engine_kw,
     )
-    token = set_client(client)
-    try:
+    if hooks:
+        client._hooks = list(hooks) + list(client._hooks)
+    with client.scope():
         yield client
-    finally:
-        reset_client(token)
-        if storage == "gremlin":
-            client._driver.close()
+    if lifecycle == "request":
+        client.close()
 
 
 @asynccontextmanager
@@ -51,7 +52,9 @@ async def async_bind(
     schemas: list[type[Schema]],
     storage: str = "sql",
     observer_packages: list[str] | None = None,
+    hooks: list[Any] | None = None,
     ctx: dict[str, Any] | None = None,
+    lifecycle: Lifecycle = "request",
     **engine_kw: Any,
 ) -> AsyncIterator[AsyncClient]:
     """绑定异步 Client；块内使用 await client.create(...).save()。"""
@@ -63,13 +66,12 @@ async def async_bind(
         ctx=ctx,
         **engine_kw,
     )
-    token = set_async_client(client)
-    try:
+    if hooks:
+        client._hooks = list(hooks) + list(client._hooks)
+    async with client.ascope():
         yield client
-    finally:
-        reset_async_client(token)
-        if storage == "gremlin":
-            client._driver.close()
+    if lifecycle == "request":
+        await client.aclose()
 
 
 def migrate() -> None:

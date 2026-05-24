@@ -7,6 +7,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
+from entpy.runtime.session_scope import get_tx_session
+
 
 def _to_async_url(url: str) -> str:
     if url.startswith("sqlite://") and "+aiosqlite" not in url:
@@ -30,6 +32,10 @@ class AsyncSQLAlchemyDriver:
 
     @asynccontextmanager
     async def session(self):
+        tx = get_tx_session(async_=True)
+        if tx is not None:
+            yield tx
+            return
         session: AsyncSession = self._session_factory()
         try:
             yield session

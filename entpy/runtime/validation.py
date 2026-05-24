@@ -45,6 +45,42 @@ def snapshot_edges(edges: dict[str, list[Any]]) -> dict[str, list[Any]]:
     return {name: list(ids) for name, ids in edges.items()}
 
 
+def is_immutable_noop(
+    registry: Any,
+    schema: type[Schema],
+    name: str,
+    old: Any,
+    new: Any,
+) -> bool:
+    """不可变字段仅类型/表示变化（如 UUID vs str）时视为未修改。"""
+    for f in registry.node_for(schema).fields:
+        if f.name == name and f.immutable:
+            if old is None and new is None:
+                return True
+            if old is None or new is None:
+                return False
+            return str(old) == str(new)
+    return False
+
+
+def materialize_field_values(
+    registry: Any, schema: type[Schema], fields: dict[str, Any]
+) -> dict[str, Any]:
+    """Create 落库后还原字段 Python 形态（如 SQLite vector 的 JSON 字符串 → list）。"""
+    import json
+
+    out = dict(fields)
+    for f in registry.node_for(schema).fields:
+        if f.typ == FieldType.VECTOR and f.name in out:
+            val = out[f.name]
+            if isinstance(val, str):
+                try:
+                    out[f.name] = json.loads(val)
+                except json.JSONDecodeError:
+                    pass
+    return out
+
+
 def reject_immutable_updates(
     registry: Any, schema: type[Schema], fields: dict[str, Any]
 ) -> None:

@@ -69,6 +69,24 @@ def test_rule_alias_is_mutation_only():
     eval_query({}, [Policy(query=[rule(lambda _ctx, _m: (_ for _ in ()).throw(Deny()))])], FakeQuery())
 
 
+def test_allow_in_first_policy_short_circuits_later_deny():
+    def allow(_ctx, _m) -> None:
+        raise Allow()
+
+    def deny(_ctx, _m) -> None:
+        raise Deny()
+
+    m = Mutation(User, Op.CREATE, fields={})
+    eval_mutation(
+        {},
+        [
+            Policy(mutation=[mutation_rule(allow)]),
+            Policy(mutation=[mutation_rule(deny)]),
+        ],
+        m,
+    )
+
+
 def test_allow_stops_chain():
     def allow(_ctx, _m) -> None:
         raise Allow()

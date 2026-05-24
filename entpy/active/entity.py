@@ -67,6 +67,22 @@ class ActiveEntity(Entity):
             return
         old = self._data.get(name)
         value = _copy_mutable(value)
+        if old != value and not self._new:
+            client = self._client
+            if client is None:
+                try:
+                    from entpy.active.context import get_client
+
+                    client = get_client()
+                except RuntimeError:
+                    client = None
+            if client is not None:
+                from entpy.runtime.validation import is_immutable_noop
+
+                if is_immutable_noop(
+                    client._registry, self._schema, name, old, value
+                ):
+                    return
         self._data[name] = value
         if old != value and not self._new:
             self._dirty.add(name)

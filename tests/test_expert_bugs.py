@@ -116,6 +116,42 @@ def test_traverse_out_reflects_edges_after_update():
         assert len(u.out("groups").all()) == 1
 
 
+def test_active_save_ignores_immutable_id_str_cast():
+    from entpy.schema import BaseSchema, field
+
+    class T(ActiveSchema, BaseSchema):
+        @classmethod
+        def fields(cls):
+            return [field.string("n").default("")]
+
+    with bind("sqlite:///:memory:", schemas=[T]):
+        migrate()
+        t = T.create(n="a")
+        t.save()
+        t.id = str(t.id)
+        t.save()
+        assert T.get(id=t.id).n == "a"
+
+
+def test_create_save_returns_vector_as_list_sqlite():
+    from entpy.runtime import Client
+    from entpy.schema import BaseSchema, field
+
+    class Doc(ActiveSchema, BaseSchema):
+        @classmethod
+        def fields(cls):
+            return [field.vector("embedding", dimensions=2)]
+
+    client = Client.open("sqlite:///:memory:", schemas=[Doc])
+    try:
+        client.migrate()
+        row = client.create(Doc, embedding=[1.0, 2.0]).save()
+        assert isinstance(row.embedding, list)
+        assert row.embedding == [1.0, 2.0]
+    finally:
+        client.close()
+
+
 def test_builder_isolates_json_before_save():
     class Note(ActiveSchema, BaseSchema):
         @classmethod

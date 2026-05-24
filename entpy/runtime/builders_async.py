@@ -20,6 +20,7 @@ from entpy.runtime.query_exec import execute_query_async
 from entpy.runtime.spec_helpers import create_spec, update_spec
 from entpy.runtime.validation import (
     collect_update_fields_after_hooks,
+    materialize_field_values,
     merge_mutation_into_builder,
     reject_immutable_updates,
     snapshot_edges,
@@ -57,7 +58,12 @@ class AsyncCreateBuilder(CreateBuilder):
                 )
         mutation.id = row_id
         notify_after_observers(self._client._observers, mutation)
-        return Entity(self._schema, {**self._fields, "id": row_id}, self._client)
+        row_data = materialize_field_values(
+            self._client._registry,
+            self._schema,
+            {**self._fields, "id": row_id},
+        )
+        return Entity(self._schema, row_data, self._client)
 
 
 class AsyncUpdateBuilder(UpdateBuilder):

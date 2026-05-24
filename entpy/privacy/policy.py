@@ -82,7 +82,8 @@ def _eval_rules(
     method: str,
     *,
     deny_by_default: bool = False,
-) -> None:
+) -> bool:
+    """求值规则链；显式 ``Allow`` 时返回 ``True``。"""
     for rule in rules:
         handler = getattr(rule, method, None)
         if handler is None:
@@ -90,37 +91,38 @@ def _eval_rules(
         try:
             handler(ctx, obj)
         except Allow:
-            return
+            return True
         except Deny as e:
             raise NotAllowedError(str(e) or "operation denied by policy") from e
         except Skip:
             continue
     if deny_by_default:
         raise NotAllowedError("operation denied by default policy")
+    return False
 
 
 def eval_query(ctx: dict[str, Any], policies: list[Policy], query: Any) -> None:
     for p in policies:
-        if p.query:
-            _eval_rules(
-                p.query,
-                ctx,
-                query,
-                "eval_query",
-                deny_by_default=p.deny_by_default,
-            )
+        if p.query and _eval_rules(
+            p.query,
+            ctx,
+            query,
+            "eval_query",
+            deny_by_default=p.deny_by_default,
+        ):
+            return
 
 
 def eval_mutation(ctx: dict[str, Any], policies: list[Policy], mutation: Mutation) -> None:
     for p in policies:
-        if p.mutation:
-            _eval_rules(
-                p.mutation,
-                ctx,
-                mutation,
-                "eval_mutation",
-                deny_by_default=p.deny_by_default,
-            )
+        if p.mutation and _eval_rules(
+            p.mutation,
+            ctx,
+            mutation,
+            "eval_mutation",
+            deny_by_default=p.deny_by_default,
+        ):
+            return
 
 
 _CTX_KEY = "_entpy_privacy_decision"

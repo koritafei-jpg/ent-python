@@ -18,6 +18,12 @@ from entpy.runtime.interceptor import QueryRequest
 from entpy.runtime.mutation import Mutation, Op
 from entpy.runtime.predicate import Predicate
 from entpy.runtime.query_exec import execute_query_sync
+from entpy.runtime.query_helpers import (
+    entity_first,
+    entity_only,
+    eval_and_fetch_entities,
+    make_limited_request,
+)
 from entpy.runtime.spec_helpers import create_spec, update_spec
 from entpy.runtime.validation import (
     collect_update_fields_after_hooks,
@@ -167,35 +173,35 @@ class QueryBuilder:
             limit=self._limit,
             with_edges=list(self._with),
         )
-        from entpy.active.context import get_effective_ctx
-
-        eval_query(get_effective_ctx(self._client), self._client._policies, request)
-        rows = self._run_query(request)
-        return [Entity(self._schema, r, self._client) for r in rows]
+        return eval_and_fetch_entities(
+            self._client,
+            self._schema,
+            self._client._policies,
+            self._predicates,
+            builder_limit=self._limit,
+            with_edges=list(self._with),
+            request=request,
+            fetch_rows=self._run_query,
+        )
 
     def _query_with_limit(self, limit: int) -> list[Entity]:
-        request = QueryRequest(
-            schema=self._schema,
-            limit=limit,
+        request = make_limited_request(self._schema, limit, list(self._with))
+        return eval_and_fetch_entities(
+            self._client,
+            self._schema,
+            self._client._policies,
+            self._predicates,
+            builder_limit=self._limit,
             with_edges=list(self._with),
+            request=request,
+            fetch_rows=self._run_query,
         )
-        from entpy.active.context import get_effective_ctx
-
-        eval_query(get_effective_ctx(self._client), self._client._policies, request)
-        rows = self._run_query(request)
-        return [Entity(self._schema, r, self._client) for r in rows]
 
     def only(self) -> Entity:
-        rows = self._query_with_limit(2)
-        if not rows:
-            raise NotFoundError(f"{self._schema.type_name()}: not found")
-        if len(rows) > 1:
-            raise NotFoundError(f"{self._schema.type_name()}: not unique")
-        return rows[0]
+        return entity_only(self._query_with_limit(2), self._schema.type_name())
 
     def first(self) -> Entity | None:
-        rows = self._query_with_limit(1)
-        return rows[0] if rows else None
+        return entity_first(self._query_with_limit(1))
 
 
 class UpdateBuilder:

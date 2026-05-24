@@ -1,4 +1,4 @@
-"""语义检索：PostgreSQL pgvector 或暴力回退。"""
+"""语义检索：PostgreSQL pgvector；SQLite 仅开发态可显式启用暴力扫描。"""
 
 from __future__ import annotations
 
@@ -8,6 +8,9 @@ from typing import Any
 
 from entpy.search.backends.base import ScoredHit
 from entpy.search.embedder import Embedder
+
+# SQLite 等暴力余弦扫描的行数上限（防止 OOM）
+SEMANTIC_BRUTE_MAX_ROWS = 10_000
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -121,6 +124,7 @@ class SemanticBackend:
         *,
         top_k: int = 20,
         text_column: str | None = "data",
+        allow_brute_fallback: bool = False,
     ) -> list[ScoredHit]:
         if isinstance(query, str):
             if embedder is None:
@@ -142,11 +146,39 @@ class SemanticBackend:
                     top_k=top_k,
                     text_column=text_column,
                 )
-            except ImportError:
-                pass
+            except ImportError as exc:
+                raise RuntimeError(
+                    "semantic search on PostgreSQL requires pgvector; "
+                    "pip install pgvector"
+                ) from exc
 
-        from sqlalchemy import select
+        if dialect == "sqlite" and allow_brute_fallback:
+            return self._search_brute_table(
+                session, table, vector_column, query_vec, top_k=top_k
+            )
 
+        raise RuntimeError(
+            f"semantic search on {dialect!r} requires pgvector (PostgreSQL) "
+            "or allow_brute_fallback=True on SQLite for development only"
+        )
+
+    def _search_brute_table(
+        self,
+        session,
+        table,
+        vector_column: str,
+        query_vec: list[float],
+        *,
+        top_k: int,
+    ) -> list[ScoredHit]:
+        from sqlalchemy import func, select
+
+        count = session.execute(select(func.count()).select_from(table)).scalar_one()
+        if count > SEMANTIC_BRUTE_MAX_ROWS:
+            raise RuntimeError(
+                f"brute semantic scan refused: {count} rows exceeds "
+                f"SEMANTIC_BRUTE_MAX_ROWS={SEMANTIC_BRUTE_MAX_ROWS}"
+            )
         rows = session.execute(select(table)).mappings().all()
         data = [dict(r) for r in rows]
         return self.search_brute(data, vector_column, query_vec, top_k=top_k)

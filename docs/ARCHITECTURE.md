@@ -400,8 +400,9 @@ Client.open_with(hooks=...)
 | **事务** | `transaction()` 块内 session 复用 |
 | **遍历** | 链式 `.out()`；SQL JOIN 多跳 + 复杂边回退；Gremlin 多跳 fast path |
 | **写优化** | SQL `RETURNING`；Gremlin 单次 `valueMap` 返回；按谓词删除 |
-| **读优化** | `load_neighbors_sql_batch`；Registry 边解析缓存 |
-| **异步** | `AsyncClient`、`chain_hooks_async`、`execute_query_async` |
+| **读优化** | `load_neighbors_sql_batch`；Gremlin `load_edge_neighbors_batch`（`group().by(id)`）；Registry 边解析缓存；遍历 hop 解析缓存 |
+| **异步** | `AsyncClient`、`chain_hooks_async`、`execute_query_async`；`sqlgraph_async.query_nodes` 原生 `await execute` |
+| **检索** | PostgreSQL 需 pgvector；SQLite 仅 `allow_brute_fallback` 开发态；`reindex` 分页 + `batch_update_fields` |
 | **数据健壮性** | JSON / dict / list 深拷贝与脏检测；`id=str(uuid)` 不可变 noop；`merge_mutation` 边列表去重；`Entity` 剥离 `_edges` 出 `_data` |
 | **检索** | `embed_on_save_hook` 对接外部 Embedding API |
 | **规范** | 未知边名 `ValueError`；`create_spec` / `update_spec` 校验 |
@@ -464,7 +465,7 @@ flowchart TB
 | 注册表 | `entpy/runtime/registry.py` |
 | Client / 事务 | `entpy/runtime/client.py`, `async_client.py`, `session_scope.py` |
 | CRUD Builder | `entpy/runtime/builders.py`, `builders_async.py` |
-| 查询执行 | `entpy/runtime/query_exec.py` |
+| 查询执行 | `entpy/runtime/query_exec.py`, `query_helpers.py` |
 | 谓词 | `entpy/runtime/predicate.py` |
 | Spec | `entpy/runtime/spec_helpers.py` |
 | 校验 / 脏字段 | `entpy/runtime/validation.py` |

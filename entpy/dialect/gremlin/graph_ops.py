@@ -89,15 +89,18 @@ def query_nodes(
     if spec.limit is not None:
         t = t.limit(spec.limit)
     rows = [_vm_to_dict(r) for r in t.valueMap(True).toList()]
-    if spec.with_edges:
+    if spec.with_edges and rows:
+        owner_schema = _schema_for_label(registry, label)
+        owner_ids = [row["id"] for row in rows]
         for row in rows:
             row["_edges"] = {}
-            for ename in spec.with_edges:
-                re = registry.resolve_edge(_schema_for_label(registry, label), ename)
-                if re is None:
-                    continue
-                peers = _load_edge_neighbors(g, registry, row["id"], re)
-                row["_edges"][ename] = peers
+        for ename in spec.with_edges:
+            re = registry.resolve_edge(owner_schema, ename)
+            if re is None:
+                continue
+            grouped = load_edge_neighbors_batch(g, registry, owner_ids, re)
+            for row in rows:
+                row["_edges"][ename] = grouped.get(row["id"], [])
     return rows
 
 
@@ -105,6 +108,29 @@ def traverse_neighbors(
     g, registry: Registry, *, owner_label: str, owner_id: Any, edge: ResolvedEdge
 ) -> list[dict]:
     return _load_edge_neighbors(g, registry, owner_id, edge)
+
+
+def load_edge_neighbors_batch(
+    g,
+    registry: Registry,
+    owner_ids: list[Any],
+    edge: ResolvedEdge,
+) -> dict[Any, list[dict]]:
+    """批量加载多 owner 的一跳邻居（单次 Gremlin group，避免 N+1）。"""
+    if not owner_ids:
+        return {}
+    from gremlinpython.process.graph_traversal import __
+
+    out: dict[Any, list[dict]] = {oid: [] for oid in owner_ids}
+    try:
+        grouped = _gremlin_group_neighbors(g, owner_ids, edge)
+    except Exception:
+        for oid in owner_ids:
+            out[oid] = _load_edge_neighbors(g, registry, oid, edge)
+        return out
+    for owner_id, vms in grouped.items():
+        out[owner_id] = [_vm_to_dict(vm) for vm in (vms or [])]
+    return out
 
 
 def traverse_chain(
@@ -212,12 +238,63 @@ def _gremlin_out_step(t, edge: ResolvedEdge):
     return t.out(el)
 
 
+def _gremlin_group_neighbors(g, owner_ids: list[Any], edge: ResolvedEdge) -> dict[Any, list]:
+    """``group().by(id).by(neighbors.fold())`` 一次遍历加载多 owner 邻居。"""
+    from gremlinpython.process.graph_traversal import __
+
+    peer_label = vertex_label(edge.peer)
+    el = edge_label(edge)
+    by_neighbors = _gremlin_neighbor_fold(edge, peer_label, el)
+    raw = g.V(*owner_ids).group().by(__.id).by(by_neighbors).next()
+    if not isinstance(raw, dict):
+        return {}
+    return raw
+
+
+def _gremlin_neighbor_fold(edge: ResolvedEdge, peer_label: str, el: str):
+    from gremlinpython.process.graph_traversal import __
+
+    if edge.rel == RelType.M2M:
+        return __.out(el).valueMap(True).fold()
+    if edge.fk_columns and edge.rel == RelType.O2M and not edge.inverse:
+        fk = edge.fk_columns[0]
+        return (
+            __.V()
+            .hasLabel(peer_label)
+            .has(fk, __.select(__.identity()).by("id"))
+            .valueMap(True)
+            .fold()
+        )
+    if edge.fk_columns and edge.inverse:
+        fk = edge.fk_columns[0]
+        return (
+            __.choose(
+                __.values(fk).is_(__.neq(None)),
+                __.V()
+                .hasLabel(peer_label)
+                .has("id", __.values(fk))
+                .valueMap(True)
+                .fold(),
+                __.constant([]),
+            )
+        )
+    if edge.fk_columns:
+        fk = edge.fk_columns[0]
+        return (
+            __.V()
+            .hasLabel(peer_label)
+            .has(fk, __.select(__.identity()).by("id"))
+            .valueMap(True)
+            .fold()
+        )
+    return __.out(el).valueMap(True).fold()
+
+
 def _load_edge_neighbors(
     g, registry: Registry, owner_id: Any, edge: ResolvedEdge
 ) -> list[dict]:
-    t = g.V(owner_id)
-    t = _gremlin_out_step(t, edge)
-    return [_vm_to_dict(r) for r in t.valueMap(True).toList()]
+    batch = load_edge_neighbors_batch(g, registry, [owner_id], edge)
+    return batch.get(owner_id, [])
 
 
 def _flatten_value(v: Any) -> Any:

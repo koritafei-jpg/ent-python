@@ -22,6 +22,7 @@ from entpy.runtime.interceptor import QueryRequest
 from entpy.runtime.mutation import Mutation, Op
 from entpy.runtime.predicate import Predicate
 from entpy.runtime.query_exec import execute_query_async
+from entpy.runtime.query_helpers import entity_first, entity_only, make_limited_request
 from entpy.runtime.spec_helpers import create_spec, update_spec
 from entpy.runtime.validation import (
     collect_update_fields_after_hooks,
@@ -163,6 +164,16 @@ class AsyncQueryBuilder:
         self._with.extend(edges)
         return self
 
+    async def _fetch_rows(self, request: QueryRequest) -> list[dict]:
+        return await execute_query_async(
+            self._client,
+            self._schema,
+            self._predicates,
+            limit=self._limit,
+            with_edges=list(self._with),
+            request=request,
+        )
+
     async def all(self) -> list[Entity]:
         request = QueryRequest(
             schema=self._schema,
@@ -170,48 +181,28 @@ class AsyncQueryBuilder:
             with_edges=list(self._with),
         )
         from entpy.active.context import get_effective_ctx
+        from entpy.privacy.policy import eval_query
 
         eval_query(get_effective_ctx(self._client), self._client._policies, request)
-        rows = await execute_query_async(
-            self._client,
-            self._schema,
-            self._predicates,
-            limit=self._limit,
-            with_edges=list(self._with),
-            request=request,
-        )
+        rows = await self._fetch_rows(request)
         return [Entity(self._schema, r, self._client) for r in rows]
 
     async def _query_with_limit(self, limit: int) -> list[Entity]:
-        request = QueryRequest(
-            schema=self._schema,
-            limit=limit,
-            with_edges=list(self._with),
-        )
+        request = make_limited_request(self._schema, limit, list(self._with))
         from entpy.active.context import get_effective_ctx
+        from entpy.privacy.policy import eval_query
 
         eval_query(get_effective_ctx(self._client), self._client._policies, request)
-        rows = await execute_query_async(
-            self._client,
-            self._schema,
-            self._predicates,
-            limit=self._limit,
-            with_edges=list(self._with),
-            request=request,
-        )
+        rows = await self._fetch_rows(request)
         return [Entity(self._schema, r, self._client) for r in rows]
 
     async def only(self) -> Entity:
-        rows = await self._query_with_limit(2)
-        if not rows:
-            raise NotFoundError(f"{self._schema.type_name()}: not found")
-        if len(rows) > 1:
-            raise NotFoundError(f"{self._schema.type_name()}: not unique")
-        return rows[0]
+        return entity_only(
+            await self._query_with_limit(2), self._schema.type_name()
+        )
 
     async def first(self) -> Entity | None:
-        rows = await self._query_with_limit(1)
-        return rows[0] if rows else None
+        return entity_first(await self._query_with_limit(1))
 
 
 class AsyncDeleteBuilder:

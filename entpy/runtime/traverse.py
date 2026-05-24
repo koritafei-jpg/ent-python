@@ -77,9 +77,20 @@ def _hop_neighbors_batch(
         return _hop_neighbors(client, entities[0], edge_name)
 
     if client._driver.dialect() == "gremlin":
-        out = []
+        from entpy.dialect.gremlin import graph_ops
+
+        owner_ids = [e.id for e in entities]
+        grouped = graph_ops.load_edge_neighbors_batch(
+            client._driver.g, client._registry, owner_ids, re
+        )
+        out: list[Entity] = []
+        seen: set[Any] = set()
         for entity in entities:
-            out.extend(_hop_neighbors(client, entity, edge_name))
+            for row in grouped.get(entity.id, []):
+                if row.get("id") in seen:
+                    continue
+                seen.add(row.get("id"))
+                out.append(Entity(peer_schema, row, client))
         return out
 
     owner_ids = [e.id for e in entities]
@@ -150,9 +161,24 @@ async def _hop_neighbors_batch_async(
         return await _hop_neighbors_async(client, entities[0], edge_name)
 
     if client._driver.dialect() == "gremlin":
-        out = []
+        from entpy.dialect.gremlin import graph_ops
+
+        owner_ids = [e.id for e in entities]
+
+        def _run():
+            return graph_ops.load_edge_neighbors_batch(
+                client._driver.g, client._registry, owner_ids, re
+            )
+
+        grouped = await client._driver.run(_run)
+        out: list[Entity] = []
+        seen: set[Any] = set()
         for entity in entities:
-            out.extend(await _hop_neighbors_async(client, entity, edge_name))
+            for row in grouped.get(entity.id, []):
+                if row.get("id") in seen:
+                    continue
+                seen.add(row.get("id"))
+                out.append(Entity(peer_schema, row, client))
         return out
 
     owner_ids = [e.id for e in entities]

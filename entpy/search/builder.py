@@ -65,12 +65,15 @@ class SearchBuilder:
         *,
         embedder: Embedder | None = None,
         top_k: int = 20,
+        allow_brute_fallback: bool | None = None,
     ) -> list:
         if not self._meta.vector_column:
             raise ValueError("no vector_field in search_config")
         table = self._client._registry.table_for(self._schema)
         sem = SemanticBackend()
         text_col = self._meta.text_columns[0] if self._meta.text_columns else "data"
+        if allow_brute_fallback is None:
+            allow_brute_fallback = self._client._driver.dialect() == "sqlite"
         with sync_sql_session(self._client) as session:
             return sem.search(
                 session,
@@ -80,6 +83,7 @@ class SearchBuilder:
                 embedder,
                 top_k=top_k,
                 text_column=text_col,
+                allow_brute_fallback=allow_brute_fallback,
             )
 
     async def hybrid(

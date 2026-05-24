@@ -305,6 +305,42 @@ def traverse_chain_sql(
     return out
 
 
+def fetch_rows_page(
+    session: Session,
+    tables: dict,
+    table_name: str,
+    *,
+    page_size: int,
+    after_id: Any | None = None,
+) -> list[dict[str, Any]]:
+    """按主键升序分页读取（用于 reindex 等批量任务，避免一次加载全表）。"""
+    table = tables[table_name]
+    stmt = select(table).order_by(table.c.id).limit(page_size)
+    if after_id is not None:
+        stmt = stmt.where(table.c.id > after_id)
+    return [dict(r) for r in session.execute(stmt).mappings().all()]
+
+
+def batch_update_fields(
+    session: Session,
+    tables: dict,
+    table_name: str,
+    updates: list[tuple[Any, dict[str, Any]]],
+) -> int:
+    """批量按 id 更新字段（单 session、无 Hook，供 reindex 等内部任务）。"""
+    if not updates:
+        return 0
+    table = tables[table_name]
+    count = 0
+    for row_id, fields in updates:
+        if not fields:
+            continue
+        stmt = update(table).where(table.c.id == row_id).values(**fields)
+        session.execute(stmt)
+        count += 1
+    return count
+
+
 def delete_nodes(session: Session, tables: dict, spec: DeleteSpec) -> int:
     table = tables[spec.table]
     if spec.ids:

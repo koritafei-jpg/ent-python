@@ -110,3 +110,16 @@ def test_load_config(tmp_path: Path):
     p = tmp_path / "c.json"
     p.write_text('{"dsn": "sqlite:///:memory:"}', encoding="utf-8")
     assert load_config(p)["dsn"] == "sqlite:///:memory:"
+
+
+def test_config_async_flag_does_not_override_sync_bind():
+    with bind(
+        config={"dsn": "sqlite:///:memory:", "async": True},
+        schemas=SCHEMAS,
+    ):
+        from entpy.active import migrate
+        from entpy.active.context import get_client
+        from entpy.runtime.client import Client
+
+        migrate()
+        assert isinstance(get_client(), Client)

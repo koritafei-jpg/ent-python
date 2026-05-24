@@ -88,11 +88,10 @@ class AsyncUpdateBuilder(UpdateBuilder):
         if _is_gremlin(self._client):
             from entpy.dialect.gremlin import graph_ops
 
-            label = self._client._registry.label_for(self._schema)
-
             def _run():
-                graph_ops.update_node(self._client._driver.g, self._client._registry, spec)
-                return graph_ops.get_by_id(self._client._driver.g, label, self._id)
+                return graph_ops.update_node(
+                    self._client._driver.g, self._client._registry, spec
+                )
 
             row = await self._client._driver.run(_run)
         else:

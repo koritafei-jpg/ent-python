@@ -2,7 +2,7 @@
 
 ## 概述
 
-演示 `search(Document).semantic_sync()`（在 `with bind(...):` 内）：
+演示 `search(Document).semantic_sync()`（在 `with demo_bind(...):` 内）：
 
 - 文本 → `Embedder` → 向量相似度
 - **语义 + SQL 条件**
@@ -31,11 +31,12 @@ pip install -e ".[search]"
 ## 初始化
 
 ```python
-from entpy.active import bind, migrate, search
+from entpy.active import migrate, search
+from examples.demos.common.connect import demo_bind
 from examples.demos.semantic.models import Document, SEARCH_SCHEMAS
 from examples.demos.semantic.seed import seed
 
-with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
+with demo_bind(SEARCH_SCHEMAS):
     migrate()
     emb = seed()
     sb = search(Document)
@@ -95,19 +96,20 @@ class MyEmbedder:
 
 ## 写入时自动 Embedding（可选）
 
-在 `bind` / `async_bind` 或 `Client.open_with` 注册 `embed_on_save_hook`，可对接任意外部 Embedding 服务：
+在 `demo_bind` / `bind` / `async_bind` 的 `hooks=` 中注册 `embed_on_save_hook`，可对接任意外部 Embedding 服务：
 
 ```python
-from entpy.active import bind, migrate
+from entpy.active import migrate
 from entpy.runtime.hooks import embed_on_save_hook
 from entpy.search import callable_embedder
+from examples.demos.common.connect import demo_bind
 
 # 方式 1：直接传同步函数（HTTP 客户端封装）
 def my_embed_api(texts: list[str]) -> list[list[float]]:
     # 调用 OpenAI / 本地模型 / 自建服务
     ...
 
-with bind(dsn, schemas=SCHEMAS, hooks=[embed_on_save_hook(my_embed_api)]):
+with demo_bind(SCHEMAS, hooks=[embed_on_save_hook(my_embed_api)]):
     migrate()
     Chunk.create(path="/a", nchunk=0, data="...")  # 保存前自动写向量字段
 
@@ -118,7 +120,7 @@ class MyEmbedder:
 
 # 方式 3：callable_embedder 显式分离 sync/async
 emb = callable_embedder(embed_sync=..., embed=...)
-with bind(dsn, schemas=SCHEMAS, hooks=[embed_on_save_hook(emb)]):
+with demo_bind(SCHEMAS, hooks=[embed_on_save_hook(emb)]):
     ...
 ```
 

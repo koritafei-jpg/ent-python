@@ -3,15 +3,16 @@
 
 from __future__ import annotations
 
-from entpy.active import bind, migrate, F
+from entpy.active import migrate, F
 from examples.demos.relational.models import Article, Author, Comment, SCHEMAS
 from examples.demos.relational.seed import seed
+from examples.demos.common.connect import demo_bind
 from examples.demos.common.print_observers import print_observer_events
 
 
 def main() -> None:
     print("演示 1 — 关系数据库（SQL）")
-    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+    with demo_bind(SCHEMAS):
         migrate()
         ids = seed()
 

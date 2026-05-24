@@ -3,16 +3,17 @@
 
 from __future__ import annotations
 
-from entpy.active import bind, migrate, search
+from entpy.active import migrate, search
 from examples.demos.hybrid.models import Document, Section, SEARCH_SCHEMAS
 from examples.demos.hybrid.seed import seed
+from examples.demos.common.connect import demo_bind
 from examples.demos.common.print_observers import print_observer_events
 from examples.demos.common.search_helpers import filter_hits
 
 
 def main() -> None:
     print("演示 4 — 混合检索")
-    with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
+    with demo_bind(SEARCH_SCHEMAS):
         migrate()
         emb = seed()
         sb = search(Document)

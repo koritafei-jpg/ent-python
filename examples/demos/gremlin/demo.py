@@ -3,15 +3,13 @@
 
 from __future__ import annotations
 
-import os
 import sys
 
-from entpy.active import bind, F, clear_graph, ensure_connection
+from entpy.active import F, clear_graph, ensure_connection
 from examples.demos.gremlin.models import Comment, Person, Post, GREMLIN_SCHEMAS
 from examples.demos.gremlin.seed import seed
+from examples.demos.common.connect import demo_bind_gremlin, gremlin_config
 from examples.demos.common.print_observers import print_observer_events
-
-GREMLIN_URL = os.environ.get("ENTPY_GREMLIN_URL", "ws://localhost:8182/gremlin")
 
 
 def run_demo() -> None:
@@ -62,13 +60,14 @@ def run_demo() -> None:
 
 def main() -> None:
     print("演示 5 — Gremlin 图数据库")
+    cfg = gremlin_config()
     try:
-        with bind(GREMLIN_URL, schemas=GREMLIN_SCHEMAS, storage="gremlin"):
+        with demo_bind_gremlin(GREMLIN_SCHEMAS, config=cfg):
             ensure_connection()
             clear_graph("persons", "posts", "comments")
             run_demo()
     except Exception as e:
-        print(f"Skip: cannot connect to {GREMLIN_URL}: {e}", file=sys.stderr)
+        print(f"Skip: cannot connect to {cfg['dsn']}: {e}", file=sys.stderr)
         print("Start: docker compose -f docker-compose.gremlin.yml up -d")
         sys.exit(0)
 

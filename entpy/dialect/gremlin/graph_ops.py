@@ -30,15 +30,26 @@ def create_vertex(g, label: str, properties: dict[str, Any]) -> Any:
     return _vertex_id(result)
 
 
-def update_node(g, registry: Registry, spec: UpdateSpec) -> None:
+def update_node(g, registry: Registry, spec: UpdateSpec) -> dict[str, Any] | None:
+    """更新顶点与边，返回最新属性（字段更新与 ``valueMap`` 同次遍历，避免额外 ``get_by_id``）。"""
     vid = spec.id
     label = spec.table
-    t = g.V(vid).hasLabel(label)
-    for k, v in spec.fields.items():
-        t = t.property(k, _gremlin_value(v))
-    t.iterate()
+    if not g.V(vid).hasLabel(label).hasNext():
+        return None
+    row: dict[str, Any] | None = None
+    if spec.fields:
+        trav = g.V(vid).hasLabel(label)
+        for k, v in spec.fields.items():
+            trav = trav.property(k, _gremlin_value(v))
+        row = _vm_to_dict(trav.valueMap(True).next())
     for edge in spec.edges:
         _link_edge(g, registry, vid, edge)
+    if row is not None:
+        return row
+    rows = g.V(vid).hasLabel(label).valueMap(True).toList()
+    if not rows:
+        return None
+    return _vm_to_dict(rows[0])
 
 
 def delete_nodes(g, registry: Registry, spec: DeleteSpec) -> int:

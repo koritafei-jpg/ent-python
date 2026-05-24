@@ -1,0 +1,4 @@
+{
+  "dsn": "sqlite:///:memory:",
+  "storage": "sql"
+}

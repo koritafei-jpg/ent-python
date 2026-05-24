@@ -265,6 +265,25 @@ async def test_async_bind_rejects_sync_client():
         sync.close()
 
 
+def test_sync_bind_ignores_config_async_flag():
+    """config['async'] 不得让 bind() 解析出 AsyncClient。"""
+    with bind(
+        config={"dsn": "sqlite:///:memory:", "async": True},
+        schemas=SCHEMAS,
+    ):
+        migrate()
+        u = User.create(name="sync", age=1)
+        assert u.name == "sync"
+
+
+def test_sync_bind_ignores_env_async_flag(monkeypatch):
+    monkeypatch.setenv("ENTPY_DSN", "sqlite:///:memory:")
+    monkeypatch.setenv("ENTPY_ASYNC", "true")
+    with bind(schemas=SCHEMAS, source="env"):
+        migrate()
+        User.create(name="env-sync", age=1)
+
+
 @pytest.mark.asyncio
 async def test_async_query_with_interceptor():
     import asyncio

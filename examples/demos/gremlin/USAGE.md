@@ -15,7 +15,7 @@
 cd python
 docker compose -f docker-compose.gremlin.yml up -d
 pip install -e ".[gremlin]"
-export ENTPY_GREMLIN_URL="ws://localhost:8182/gremlin"  # 可选
+export ENTPY_DSN="ws://localhost:8182/gremlin"  # 或 ENTPY_GREMLIN_URL；覆盖 config/gremlin-local.json
 python -m examples.demos.gremlin.demo
 ```
 
@@ -34,11 +34,12 @@ python -m examples.demos.gremlin.demo
 ## 初始化
 
 ```python
-from entpy.active import bind, F, clear_graph, ensure_connection
+from entpy.active import F, clear_graph, ensure_connection
+from examples.demos.common.connect import demo_bind_gremlin, gremlin_config
 from examples.demos.gremlin.models import Person, Post, GREMLIN_SCHEMAS
 from examples.demos.gremlin.seed import seed
 
-with bind("ws://localhost:8182/gremlin", schemas=GREMLIN_SCHEMAS, storage="gremlin"):
+with demo_bind_gremlin(GREMLIN_SCHEMAS, config=gremlin_config()):
     ensure_connection()
     clear_graph("persons", "posts", "comments")
     seed()  # Gremlin 无 migrate()
@@ -99,8 +100,10 @@ posts = Post.query().where(F(Post).author_id.in_(friend_ids)).all()
 
 ```python
 from entpy.active import async_bind, get_async_client
+from examples.demos.common.connect import gremlin_config
 
-async with async_bind(url, schemas=GREMLIN_SCHEMAS, storage="gremlin"):
+cfg = gremlin_config()
+async with async_bind(config=cfg, schemas=GREMLIN_SCHEMAS):
     u = await get_async_client().create(Person, name="X", city="NYC").save()
 ```
 

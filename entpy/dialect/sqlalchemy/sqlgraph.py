@@ -200,6 +200,15 @@ def update_node(session: Session, tables: dict, spec: UpdateSpec) -> dict[str, A
     return row
 
 
+def edge_joinable_sql(edge: ResolvedEdge) -> bool:
+    """该边是否可编译为 SQL JOIN（与 ``_join_out_step`` / ``load_neighbors_sql`` 一致）。"""
+    if edge.join_table:
+        return bool(edge.join_columns)
+    if edge.rel == RelType.M2M:
+        return False
+    return bool(edge.fk_columns)
+
+
 def _join_out_step(from_clause, left_tbl, peer_tbl, edge: ResolvedEdge, tables: dict):
     """将一跳 ``out`` 遍历编译为 SQL JOIN（``peer_tbl`` 应为 aliased 表）。"""
     if edge.join_table:
@@ -227,7 +236,8 @@ def _join_out_step(from_clause, left_tbl, peer_tbl, edge: ResolvedEdge, tables: 
 
 
 def can_traverse_chain_sql(edges: list[ResolvedEdge]) -> bool:
-    return len(edges) >= 2 and all(e.join_table or e.fk_columns for e in edges)
+    """≥2 跳且每一跳均可 JOIN；否则 ``TraverseChain`` 回退 Python 逐跳。"""
+    return len(edges) >= 2 and all(edge_joinable_sql(e) for e in edges)
 
 
 def traverse_chain_sql(

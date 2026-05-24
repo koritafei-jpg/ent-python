@@ -1,13 +1,17 @@
 # entpy 能力演示（Demos）
 
-本目录包含 5 类可运行示例，展示 entpy 在关系库、全文/向量检索与图存储上的用法。所有 demo 统一使用 **`with bind(...):`** + **ActiveSchema**，业务代码无需显式 `Client.open()`。
+本目录包含 5 类可运行示例，展示 entpy 在关系库、全文/向量检索与图存储上的用法。所有 demo 统一通过 **`demo_bind` / `demo_bind_gremlin`**（连接钩子 + JSON 配置）绑定 **ActiveSchema**，业务代码无需显式 `Client.open()` 或硬编码 DSN。
 
 ## 目录结构
 
 ```
 examples/demos/
 ├── README.md                 # 本说明
+├── config/
+│   ├── sqlite-memory.json    # SQL demo 连接（ConfigConnectionHook）
+│   └── gremlin-local.json
 ├── common/
+│   ├── connect.py            # demo_bind / demo_bind_gremlin
 │   ├── search_helpers.py     # 检索命中 + SQL 等值条件后过滤
 │   └── observer_log.py       # Observer 事件记录（工具，非模型）
 ├── relational/               # 演示 1：SQL CRUD / 复杂查询 / FK 子表
@@ -49,13 +53,23 @@ pip install -e ".[dev,search,gremlin]"
 | 演示 | 存储 | 外部依赖 |
 |------|------|----------|
 | 1–4 | SQLite 内存库 | 无 |
-| 5 | Gremlin | Gremlin Server（默认 `ws://localhost:8182/gremlin`） |
+| 5 | Gremlin | Gremlin Server（默认见 `config/gremlin-local.json`） |
+
+### 连接钩子（demo 默认）
+
+各 `demo.py` 通过 `examples.demos.common.connect` 调用 `bind(config=...)`，由内置 **`ConfigConnectionHook`** 解析 JSON，而非硬编码 DSN。
+
+| 方式 | 用法 |
+|------|------|
+| 默认 | `with demo_bind(SCHEMAS):` → `config/sqlite-memory.json` |
+| 环境变量 | `ENTPY_DEMO_SOURCE=env` + `ENTPY_DSN=...`（`EnvConnectionHook`） |
+| 自定义钩子 | `register_demo_connection_hook(match_fn, open_fn)` |
 
 Gremlin 演示启动方式：
 
 ```bash
 docker compose -f docker-compose.gremlin.yml up -d
-export ENTPY_GREMLIN_URL="ws://localhost:8182/gremlin"   # 可选
+export ENTPY_DSN="ws://localhost:8182/gremlin"   # 或 ENTPY_GREMLIN_URL
 python -m examples.demos.gremlin.demo
 ```
 
@@ -64,9 +78,10 @@ python -m examples.demos.gremlin.demo
 ## 通用 API 模板
 
 ```python
-from entpy.active import bind, migrate, F, search, traverse, update
+from entpy.active import migrate, F, search, traverse, update
+from examples.demos.common.connect import demo_bind
 
-with bind("sqlite:///:memory:", schemas=SCHEMAS):
+with demo_bind(SCHEMAS):
     migrate()                          # SQL 建表；Gremlin 为 no-op
     row = User.create(name="Alice")    # 插入
     rows = User.query(status="ok").all()           # 等值查询
@@ -101,6 +116,9 @@ class User(ActiveSchema, BaseSchema):
 | `{demo}/models/` | 各子 demo 独立模型（每类一文件） |
 | `{demo}/observers/` | 各子 demo 独立 Observer（`on_save` / `on_delete`） |
 | `{demo}/seed.py` | 各子 demo 种子数据 |
+| `common/connect.py` | `demo_bind` / `demo_bind_gremlin`：经 `ConfigConnectionHook` 读 `config/*.json` |
+| `config/sqlite-memory.json` | SQL demo 默认 DSN（内存 SQLite） |
+| `config/gremlin-local.json` | Gremlin demo 默认 WebSocket URL |
 | `common/search_helpers.py` | `filter_hits(schema, hits, category=..., lang=...)` 对检索结果做 SQL 后过滤 |
 
 每个子 demo 的 `models/` 与 `observers/` 并列，由 `bind()` 按包路径自动发现 Observer，**模型无需 import Observer**。
@@ -121,11 +139,12 @@ class User(ActiveSchema, BaseSchema):
 **覆盖能力：** 简单查询、谓词 `F()`、EntQL、子表查询、跨表 `IN` 过滤
 
 ```python
-from entpy.active import bind, migrate, F
+from entpy.active import migrate, F
+from examples.demos.common.connect import demo_bind
 from examples.demos.relational.models import Article, Author, Comment, SCHEMAS
 from examples.demos.relational.seed import seed
 
-with bind("sqlite:///:memory:", schemas=SCHEMAS):
+with demo_bind(SCHEMAS):
     migrate()
     seed()
 
@@ -152,12 +171,13 @@ with bind("sqlite:///:memory:", schemas=SCHEMAS):
 **说明：** SQLite 上 `postgres_ts` 后端降级为 `LIKE`；PostgreSQL 使用 `ts_rank`。
 
 ```python
-from entpy.active import bind, migrate, search
+from entpy.active import migrate, search
+from examples.demos.common.connect import demo_bind
 from examples.demos.common.search_helpers import filter_hits
 from examples.demos.bm25.models import Document, Section, SEARCH_SCHEMAS
 from examples.demos.bm25.seed import seed
 
-with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
+with demo_bind(SEARCH_SCHEMAS):
     migrate()
     seed()
     sb = search(Document)
@@ -180,12 +200,13 @@ with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
 **说明：** `seed()` 返回 `MockEmbedder`；SQLite 上为暴力余弦相似度，PostgreSQL + pgvector 可走向量索引。
 
 ```python
-from entpy.active import bind, migrate, search
+from entpy.active import migrate, search
+from examples.demos.common.connect import demo_bind
 from examples.demos.common.search_helpers import filter_hits
 from examples.demos.semantic.models import Document, SEARCH_SCHEMAS
 from examples.demos.semantic.seed import seed
 
-with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
+with demo_bind(SEARCH_SCHEMAS):
     migrate()
     emb = seed()
     sb = search(Document)
@@ -205,12 +226,13 @@ with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
 **说明：** 同时跑 BM25 与语义两路，用倒数排名融合（RRF）合并；`ScoredHit.source` 为 `"hybrid"`。
 
 ```python
-from entpy.active import bind, migrate, search
+from entpy.active import migrate, search
+from examples.demos.common.connect import demo_bind
 from examples.demos.common.search_helpers import filter_hits
 from examples.demos.hybrid.models import Document, SEARCH_SCHEMAS
 from examples.demos.hybrid.seed import seed
 
-with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
+with demo_bind(SEARCH_SCHEMAS):
     migrate()
     emb = seed()
     sb = search(Document)
@@ -239,11 +261,12 @@ with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
 边标签规则：`{owner}_{edge_name}`，例如 `person_knows`。
 
 ```python
-from entpy.active import bind, F, traverse, clear_graph, ensure_connection
+from entpy.active import F, traverse, clear_graph, ensure_connection
+from examples.demos.common.connect import demo_bind_gremlin
 from examples.demos.gremlin.models import Comment, Person, Post, GREMLIN_SCHEMAS
 from examples.demos.gremlin.seed import seed
 
-with bind("ws://localhost:8182/gremlin", schemas=GREMLIN_SCHEMAS, storage="gremlin"):
+with demo_bind_gremlin(GREMLIN_SCHEMAS):
     ensure_connection()
     clear_graph("persons", "posts", "comments")
     seed()

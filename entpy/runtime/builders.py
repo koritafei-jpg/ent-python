@@ -214,9 +214,9 @@ class UpdateBuilder:
             if _is_gremlin(self._client):
                 from entpy.dialect.gremlin import graph_ops
 
-                label = self._client._registry.label_for(self._schema)
-                graph_ops.update_node(session.g, self._client._registry, spec)
-                row = graph_ops.get_by_id(session.g, label, self._id)
+                row = graph_ops.update_node(
+                    session.g, self._client._registry, spec
+                )
             else:
                 row = sqlgraph.update_node(
                     session, self._client._registry.tables, spec

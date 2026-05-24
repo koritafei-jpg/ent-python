@@ -1,0 +1,4 @@
+{
+  "dsn": "ws://localhost:8182/gremlin",
+  "storage": "gremlin"
+}

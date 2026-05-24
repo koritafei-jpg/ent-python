@@ -242,27 +242,30 @@ class TraverseChain(_TraverseChainBase):
         peer_schema = resolved[-1].peer.schema_type
         owner_table = self._client._registry.label_for(self._entity._schema)
         tables = self._client._registry.tables
-        with self._client._driver.session() as session:
-            if self._project_field:
-                vals = traverse_chain_sql(
+        try:
+            with self._client._driver.session() as session:
+                if self._project_field:
+                    vals = traverse_chain_sql(
+                        session,
+                        tables,
+                        owner_id=self._entity.id,
+                        owner_table=owner_table,
+                        edges=resolved,
+                        field=self._project_field,
+                        limit=self._limit,
+                    )
+                    return vals
+                rows = traverse_chain_sql(
                     session,
                     tables,
                     owner_id=self._entity.id,
                     owner_table=owner_table,
                     edges=resolved,
-                    field=self._project_field,
                     limit=self._limit,
                 )
-                return vals
-            rows = traverse_chain_sql(
-                session,
-                tables,
-                owner_id=self._entity.id,
-                owner_table=owner_table,
-                edges=resolved,
-                limit=self._limit,
-            )
-            return [Entity(peer_schema, r, self._client) for r in rows]
+                return [Entity(peer_schema, r, self._client) for r in rows]
+        except ValueError:
+            return None
 
     def _gremlin_fast_path(self) -> list[Any] | None:
         if self._client._driver.dialect() != "gremlin" or self._predicates:
@@ -408,26 +411,29 @@ class AsyncTraverseChain(_TraverseChainBase):
         peer_schema = resolved[-1].peer.schema_type
         owner_table = self._client._registry.label_for(self._entity._schema)
         tables = self._client._registry.tables
-        async with self._client._driver.session() as session:
-            if self._project_field:
-                return await sqlgraph_async.traverse_chain_sql(
+        try:
+            async with self._client._driver.session() as session:
+                if self._project_field:
+                    return await sqlgraph_async.traverse_chain_sql(
+                        session,
+                        tables,
+                        owner_id=self._entity.id,
+                        owner_table=owner_table,
+                        edges=resolved,
+                        field=self._project_field,
+                        limit=self._limit,
+                    )
+                rows = await sqlgraph_async.traverse_chain_sql(
                     session,
                     tables,
                     owner_id=self._entity.id,
                     owner_table=owner_table,
                     edges=resolved,
-                    field=self._project_field,
                     limit=self._limit,
                 )
-            rows = await sqlgraph_async.traverse_chain_sql(
-                session,
-                tables,
-                owner_id=self._entity.id,
-                owner_table=owner_table,
-                edges=resolved,
-                limit=self._limit,
-            )
-            return [Entity(peer_schema, r, self._client) for r in rows]
+                return [Entity(peer_schema, r, self._client) for r in rows]
+        except ValueError:
+            return None
 
     async def _gremlin_fast_path(self) -> list[Any] | None:
         if self._client._driver.dialect() != "gremlin" or self._predicates:

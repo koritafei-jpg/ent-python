@@ -2,7 +2,7 @@
 
 ## 概述
 
-演示 `search(Document).bm25_sync()`（在 `with bind(...):` 内）：
+演示 `search(Document).bm25_sync()`（在 `with demo_bind(...):` 内）：
 
 - 基础关键词检索（开发环境用 `postgres_ts`：SQLite 下降级为 `LIKE`）
 - **BM25 + SQL 条件**（category / lang）
@@ -28,11 +28,12 @@ python -m examples.demos.bm25.demo
 ## 初始化
 
 ```python
-from entpy.active import bind, migrate, search
+from entpy.active import migrate, search
+from examples.demos.common.connect import demo_bind
 from examples.demos.bm25.models import Document, SEARCH_SCHEMAS
 from examples.demos.bm25.seed import seed
 
-with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
+with demo_bind(SEARCH_SCHEMAS):
     migrate()
     seed()
     sb = search(Document)

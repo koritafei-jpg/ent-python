@@ -114,6 +114,10 @@ def bind(
         extra_hooks=connection_hooks,
         apply_runtime_hooks=False,
     )
+    if not isinstance(resolved, Client):
+        raise TypeError(
+            "bind() requires sync Client; use async_bind() for async connections"
+        )
     prev_hooks = list(resolved._hooks)
     if hooks:
         resolved._hooks = list(hooks) + prev_hooks
@@ -191,6 +195,10 @@ async def async_bind(
         extra_hooks=connection_hooks,
         apply_runtime_hooks=False,
     )
+    if not isinstance(resolved, AsyncClient):
+        raise TypeError(
+            "async_bind() requires AsyncClient; use bind() for sync connections"
+        )
     prev_hooks = list(resolved._hooks)
     if hooks:
         resolved._hooks = list(hooks) + prev_hooks

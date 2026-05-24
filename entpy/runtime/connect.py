@@ -164,7 +164,7 @@ class ConfigConnectionHook:
             raise ValueError("config must include 'dsn'")
         nested = ConnectRequest(
             schemas=request.schemas,
-            async_=bool(cfg.get("async", request.async_)),
+            async_=request.async_,
             dsn=dsn,
             storage=str(cfg.get("storage", request.storage)),
             observer_packages=request.observer_packages,
@@ -198,7 +198,7 @@ class EnvConnectionHook:
             )
         nested = ConnectRequest(
             schemas=request.schemas,
-            async_=bool(cfg.get("async", request.async_)),
+            async_=request.async_,
             dsn=dsn,
             storage=str(cfg.get("storage", request.storage)),
             observer_packages=request.observer_packages,

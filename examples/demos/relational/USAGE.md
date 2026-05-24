@@ -2,7 +2,7 @@
 
 ## 概述
 
-使用 **`with bind(...):`** + ActiveSchema API 演示：
+使用 **`with demo_bind(...):`**（连接钩子 + `config/sqlite-memory.json`）+ ActiveSchema API 演示：
 
 - 简单 / 复杂条件查询
 - EntQL
@@ -19,11 +19,12 @@ python -m examples.demos.relational.demo
 ## 标准模板
 
 ```python
-from entpy.active import bind, migrate, F
+from entpy.active import migrate, F
+from examples.demos.common.connect import demo_bind
 from examples.demos.relational.models import Article, Author, Comment, SCHEMAS
 from examples.demos.relational.seed import seed
 
-with bind("sqlite:///:memory:", schemas=SCHEMAS):
+with demo_bind(SCHEMAS):
     migrate()
     ids = seed()
 

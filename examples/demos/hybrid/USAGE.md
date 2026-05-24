@@ -2,7 +2,7 @@
 
 ## 概述
 
-演示 `search(Document).hybrid_sync()`（在 `with bind(...):` 内）：
+演示 `search(Document).hybrid_sync()`（在 `with demo_bind(...):` 内）：
 
 - 并行 BM25 + 语义两路召回
 - **Reciprocal Rank Fusion (RRF)** 合并
@@ -36,11 +36,12 @@ SearchConfig(
 ## 初始化
 
 ```python
-from entpy.active import bind, migrate, search
+from entpy.active import migrate, search
+from examples.demos.common.connect import demo_bind
 from examples.demos.hybrid.models import Document, SEARCH_SCHEMAS
 from examples.demos.hybrid.seed import seed
 
-with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
+with demo_bind(SEARCH_SCHEMAS):
     migrate()
     emb = seed()
     sb = search(Document)

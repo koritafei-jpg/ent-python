@@ -3,16 +3,17 @@
 
 from __future__ import annotations
 
-from entpy.active import bind, migrate, search
+from entpy.active import migrate, search
 from examples.demos.bm25.models import Document, Section, SEARCH_SCHEMAS
 from examples.demos.bm25.seed import seed
+from examples.demos.common.connect import demo_bind
 from examples.demos.common.search_helpers import filter_hits
 from examples.demos.common.print_observers import print_observer_events
 
 
 def main() -> None:
     print("演示 2 — BM25 全文检索")
-    with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
+    with demo_bind(SEARCH_SCHEMAS):
         migrate()
         seed()
         sb = search(Document)

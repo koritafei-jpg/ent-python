@@ -8,24 +8,45 @@ from typing import Any
 _client_var: ContextVar[Any | None] = ContextVar("entpy_active_client", default=None)
 _async_client_var: ContextVar[Any | None] = ContextVar("entpy_active_async_client", default=None)
 _scope_ctx_var: ContextVar[dict[str, Any] | None] = ContextVar("entpy_scope_ctx", default=None)
+_effective_ctx_sig: ContextVar[tuple[int, int, int] | None] = ContextVar(
+    "entpy_effective_ctx_sig", default=None
+)
+_effective_ctx_merged: ContextVar[dict[str, Any] | None] = ContextVar(
+    "entpy_effective_ctx_merged", default=None
+)
+
+
+def _invalidate_effective_ctx_cache() -> None:
+    _effective_ctx_sig.set(None)
+    _effective_ctx_merged.set(None)
 
 
 def get_effective_ctx(client: Any) -> dict[str, Any]:
-    """Client 基础 ctx 与 scope 叠加层合并（并发安全）。"""
+    """Client 基础 ctx 与 scope 叠加层合并（ContextVar 缓存，避免热路径重复拷贝）。"""
     overlay = _scope_ctx_var.get()
     base = client._ctx
     if not overlay:
         return base
-    return {**base, **overlay}
+    sig = (id(client), id(base), id(overlay))
+    if _effective_ctx_sig.get() == sig:
+        cached = _effective_ctx_merged.get()
+        if cached is not None:
+            return cached
+    merged = {**base, **overlay}
+    _effective_ctx_sig.set(sig)
+    _effective_ctx_merged.set(merged)
+    return merged
 
 
 def push_scope_ctx(overlay: dict[str, Any]) -> Any:
     prev = _scope_ctx_var.get() or {}
+    _invalidate_effective_ctx_cache()
     return _scope_ctx_var.set({**prev, **overlay})
 
 
 def reset_scope_ctx(token: Any) -> None:
     _scope_ctx_var.reset(token)
+    _invalidate_effective_ctx_cache()
 
 
 def set_client(client: Any) -> Any:

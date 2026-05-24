@@ -37,6 +37,7 @@ class Client:
         self._observers = observers or []
         self._ctx = ctx if ctx is not None else {}
         self._node_clients: dict[str, NodeClient] = {}
+        self._search_registry: Any = None
 
     def migrate(self) -> None:
         """根据 Schema 图创建数据库表（DDL）。"""
@@ -174,12 +175,17 @@ class Client:
                 return nc
         raise AttributeError(name)
 
+    def _get_search_registry(self):
+        if self._search_registry is None:
+            from entpy.search.registry import SearchRegistry
+
+            self._search_registry = SearchRegistry.from_registry(self._registry)
+        return self._search_registry
+
     def search(self, schema: type[Schema]):
         from entpy.search.builder import SearchBuilder
-        from entpy.search.registry import SearchRegistry
 
-        sr = SearchRegistry.from_registry(self._registry)
-        return SearchBuilder(self, schema, sr)  # 测试中可覆盖 bm25_backend
+        return SearchBuilder(self, schema, self._get_search_registry())
 
 class NodeClient:
     def __init__(self, client: Client, schema: type[Schema]) -> None:

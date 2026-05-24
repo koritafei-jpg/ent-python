@@ -51,13 +51,24 @@ def _hop_neighbors(client: Any, entity: Entity, edge_name: str) -> list[Entity]:
         return [Entity(peer_schema, r, client) for r in rows]
 
 
+def _assert_same_schema(entities: list[Entity]) -> type[Schema]:
+    schema = entities[0]._schema
+    for entity in entities[1:]:
+        if entity._schema is not schema:
+            raise ValueError(
+                "batch neighbor load requires entities of the same schema"
+            )
+    return schema
+
+
 def _hop_neighbors_batch(
     client: Any, entities: list[Entity], edge_name: str
 ) -> list[Entity]:
     """单跳批量邻居（同 schema 的一组实体）。"""
     if not entities:
         return []
-    re = client._registry.resolve_edge(entities[0]._schema, edge_name)
+    schema = _assert_same_schema(entities)
+    re = client._registry.resolve_edge(schema, edge_name)
     if re is None:
         raise ValueError(f"unknown edge {edge_name!r}")
     peer_schema = re.peer.schema_type
@@ -129,7 +140,8 @@ async def _hop_neighbors_batch_async(
 ) -> list[Entity]:
     if not entities:
         return []
-    re = client._registry.resolve_edge(entities[0]._schema, edge_name)
+    schema = _assert_same_schema(entities)
+    re = client._registry.resolve_edge(schema, edge_name)
     if re is None:
         raise ValueError(f"unknown edge {edge_name!r}")
     peer_schema = re.peer.schema_type
@@ -179,6 +191,9 @@ class _TraverseChainBase:
         self._project_field: str | None = None
 
     def _resolve_hops(self) -> list[ResolvedEdge]:
+        cached = getattr(self, "_resolved_hops_cache", None)
+        if cached is not None:
+            return cached
         if not self._hops:
             raise ValueError("traverse 需要至少一条边，请使用 .out('edge_name')")
         resolved: list[ResolvedEdge] = []
@@ -191,6 +206,7 @@ class _TraverseChainBase:
                 )
             resolved.append(re)
             schema = re.peer.schema_type
+        self._resolved_hops_cache = resolved
         return resolved
 
     def _peer_schema(self) -> type[Schema]:

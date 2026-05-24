@@ -45,6 +45,7 @@ def load_neighbors_sql(
 
     fk = re.fk_columns[0]
     if re.inverse:
+        # 逆 FK 始终查库，避免用过期 owner_data（遍历语义以持久化为准）
         owner_tbl = tables[owner_table]
         fk_val = session.execute(
             select(getattr(owner_tbl.c, fk)).where(owner_tbl.c.id == owner_id)
@@ -94,14 +95,23 @@ def load_neighbors_sql_batch(
 
     fk = re.fk_columns[0]
     if re.inverse:
-        owner_tbl = tables[owner_table]
         fk_map: dict[Any, Any] = {}
-        stmt = select(owner_tbl.c.id, getattr(owner_tbl.c, fk)).where(
-            owner_tbl.c.id.in_(owner_ids)
-        )
-        for rid, fkv in session.execute(stmt).all():
+        missing: list[Any] = []
+        for oid in owner_ids:
+            row = owner_rows.get(oid) or {}
+            fkv = row.get(fk)
             if fkv is not None:
-                fk_map[rid] = fkv
+                fk_map[oid] = fkv
+            else:
+                missing.append(oid)
+        if missing:
+            owner_tbl = tables[owner_table]
+            stmt = select(owner_tbl.c.id, getattr(owner_tbl.c, fk)).where(
+                owner_tbl.c.id.in_(missing)
+            )
+            for rid, fkv in session.execute(stmt).all():
+                if fkv is not None:
+                    fk_map[rid] = fkv
         peer_ids = [v for v in fk_map.values() if v is not None]
         if not peer_ids:
             return out

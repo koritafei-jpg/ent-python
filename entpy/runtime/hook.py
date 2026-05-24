@@ -90,14 +90,26 @@ class _SyncHookOnAsync:
         )
 
 
+_NESTED_LOOP_EXECUTOR: concurrent.futures.ThreadPoolExecutor | None = None
+
+
+def _nested_loop_executor() -> concurrent.futures.ThreadPoolExecutor:
+    global _NESTED_LOOP_EXECUTOR
+    if _NESTED_LOOP_EXECUTOR is None:
+        _NESTED_LOOP_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+            max_workers=4,
+            thread_name_prefix="entpy-hook",
+        )
+    return _NESTED_LOOP_EXECUTOR
+
+
 def _run_coro_sync(coro: Coroutine[Any, Any, Any]) -> Any:
-    """从同步上下文执行协程；若当前线程已有 event loop 则在新线程内运行。"""
+    """从同步上下文执行协程；若当前线程已有 event loop 则复用共享线程池运行。"""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result()
+    return _nested_loop_executor().submit(asyncio.run, coro).result()
 
 
 class _AsyncMutatorAsSync:

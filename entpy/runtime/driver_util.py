@@ -18,6 +18,11 @@ def is_async_client(client: Any) -> bool:
     return isinstance(client, AsyncClient)
 
 
+def is_gremlin_client(client: Any) -> bool:
+    """当前 Client 是否使用 Gremlin 存储（避免多处重复 dialect 判断）。"""
+    return client._driver.dialect() == "gremlin"
+
+
 @contextmanager
 def sync_sql_session(client: Any) -> Iterator[Any]:
     """检索等同步 API 用的 ORM session（AsyncClient 走 sync_engine）。"""

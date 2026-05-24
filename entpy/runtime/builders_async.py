@@ -182,13 +182,27 @@ class AsyncQueryBuilder:
         )
         return [Entity(self._schema, r, self._client) for r in rows]
 
+    async def _query_with_limit(self, limit: int) -> list[Entity]:
+        request = QueryRequest(
+            schema=self._schema,
+            limit=limit,
+            with_edges=list(self._with),
+        )
+        from entpy.active.context import get_effective_ctx
+
+        eval_query(get_effective_ctx(self._client), self._client._policies, request)
+        rows = await execute_query_async(
+            self._client,
+            self._schema,
+            self._predicates,
+            limit=self._limit,
+            with_edges=list(self._with),
+            request=request,
+        )
+        return [Entity(self._schema, r, self._client) for r in rows]
+
     async def only(self) -> Entity:
-        saved_limit = self._limit
-        self._limit = 2
-        try:
-            rows = await self.all()
-        finally:
-            self._limit = saved_limit
+        rows = await self._query_with_limit(2)
         if not rows:
             raise NotFoundError(f"{self._schema.type_name()}: not found")
         if len(rows) > 1:
@@ -196,12 +210,7 @@ class AsyncQueryBuilder:
         return rows[0]
 
     async def first(self) -> Entity | None:
-        saved_limit = self._limit
-        self._limit = 1
-        try:
-            rows = await self.all()
-        finally:
-            self._limit = saved_limit
+        rows = await self._query_with_limit(1)
         return rows[0] if rows else None
 
 

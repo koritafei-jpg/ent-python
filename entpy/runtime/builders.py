@@ -10,6 +10,7 @@ from entpy.dialect.sqlalchemy.spec import DeleteSpec
 from entpy.entql.filter import entql_to_predicates
 from entpy.observer.hooks import notify_after_observers
 from entpy.privacy.policy import eval_mutation, eval_query
+from entpy.runtime.driver_util import is_gremlin_client as _is_gremlin
 from entpy.runtime.entity import Entity
 from entpy.runtime.errors import NotFoundError
 from entpy.runtime.hook import chain_hooks
@@ -28,10 +29,6 @@ from entpy.runtime.validation import (
     snapshot_edges,
 )
 from entpy.schema.base import Schema, View
-
-
-def _is_gremlin(client: Any) -> bool:
-    return client._driver.dialect() == "gremlin"
 
 
 def _is_noop_update(fields: dict[str, Any], edges: dict[str, list[Any]]) -> bool:
@@ -176,13 +173,20 @@ class QueryBuilder:
         rows = self._run_query(request)
         return [Entity(self._schema, r, self._client) for r in rows]
 
+    def _query_with_limit(self, limit: int) -> list[Entity]:
+        request = QueryRequest(
+            schema=self._schema,
+            limit=limit,
+            with_edges=list(self._with),
+        )
+        from entpy.active.context import get_effective_ctx
+
+        eval_query(get_effective_ctx(self._client), self._client._policies, request)
+        rows = self._run_query(request)
+        return [Entity(self._schema, r, self._client) for r in rows]
+
     def only(self) -> Entity:
-        saved_limit = self._limit
-        self._limit = 2
-        try:
-            rows = self.all()
-        finally:
-            self._limit = saved_limit
+        rows = self._query_with_limit(2)
         if not rows:
             raise NotFoundError(f"{self._schema.type_name()}: not found")
         if len(rows) > 1:
@@ -190,12 +194,7 @@ class QueryBuilder:
         return rows[0]
 
     def first(self) -> Entity | None:
-        saved_limit = self._limit
-        self._limit = 1
-        try:
-            rows = self.all()
-        finally:
-            self._limit = saved_limit
+        rows = self._query_with_limit(1)
         return rows[0] if rows else None
 
 

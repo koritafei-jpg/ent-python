@@ -7,12 +7,12 @@ from typing import Any
 
 from entpy.dialect.sqlalchemy import sqlgraph, sqlgraph_async
 from entpy.dialect.sqlalchemy.spec import QuerySpec
+from entpy.runtime.driver_util import is_gremlin_client as _is_gremlin
 from entpy.runtime.interceptor import QueryRequest, chain_interceptors
 from entpy.schema.base import Schema
 
-
-def _is_gremlin(client: Any) -> bool:
-    return client._driver.dialect() == "gremlin"
+# 同步 interceptor 桥接到 async 查询时的上限（秒），防止永久阻塞 event loop 线程
+_INTERCEPTOR_BRIDGE_TIMEOUT_SEC = 300.0
 
 
 def execute_query_sync(
@@ -139,7 +139,7 @@ async def execute_query_async(
                 ),
                 loop,
             )
-            return future.result()
+            return future.result(timeout=_INTERCEPTOR_BRIDGE_TIMEOUT_SEC)
 
         return chain_interceptors(client._interceptors, terminal_execute, req)
 

@@ -40,6 +40,7 @@ class AsyncClient:
         self._policies = policies or []
         self._observers = observers or []
         self._ctx = ctx if ctx is not None else {}
+        self._search_registry: Any = None
 
     async def migrate(self) -> None:
         """根据 Schema 图创建数据库表（DDL）。"""
@@ -142,12 +143,17 @@ class AsyncClient:
     def delete(self, schema: type[Schema]) -> AsyncDeleteBuilder:
         return AsyncDeleteBuilder(self, schema)
 
+    def _get_search_registry(self):
+        if self._search_registry is None:
+            from entpy.search.registry import SearchRegistry
+
+            self._search_registry = SearchRegistry.from_registry(self._registry)
+        return self._search_registry
+
     def search(self, schema: type[Schema]):
         from entpy.search.builder import SearchBuilder
-        from entpy.search.registry import SearchRegistry
 
-        sr = SearchRegistry.from_registry(self._registry)
-        return SearchBuilder(self, schema, sr)
+        return SearchBuilder(self, schema, self._get_search_registry())
 
     def __getattr__(self, name: str) -> _AsyncNodeClient:
         for schema in self._registry.nodes:

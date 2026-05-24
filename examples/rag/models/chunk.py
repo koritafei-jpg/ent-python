@@ -1,9 +1,9 @@
-"""RAG 分块 Schema — 对齐 ent RAG + pgvector 教程。"""
+"""RAG 分块实体。"""
 
 from __future__ import annotations
 
-from entpy.schema import BaseSchema, SearchMixin, edge, field
-from entpy.schema.search import FullText, Hybrid, SearchConfig, VectorIndex
+from entpy.schema import BaseSchema, SearchMixin, field
+from entpy.schema.search import FullText, Hybrid, SearchConfig
 
 
 class Chunk(SearchMixin, BaseSchema):
@@ -23,6 +23,3 @@ class Chunk(SearchMixin, BaseSchema):
             vector_field="embedding",
             hybrid=Hybrid(bm25_backend="postgres_ts", rrf_k=60, top_k=10),
         )
-
-
-SCHEMAS = [Chunk]

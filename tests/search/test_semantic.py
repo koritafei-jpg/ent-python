@@ -6,7 +6,7 @@ import pytest
 
 from entpy.runtime import Client
 from entpy.search import MockEmbedder
-from examples.rag.schemas import Chunk, SCHEMAS
+from examples.rag.models import Chunk, SCHEMAS
 
 
 def test_semantic_sqlite_brute():

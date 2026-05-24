@@ -32,8 +32,8 @@ pip install -e ".[search]"
 
 ```python
 from entpy.active import bind, migrate, search
-from examples.demos.search_schemas import Document, SEARCH_SCHEMAS
-from examples.demos.search_seed import seed
+from examples.demos.semantic.models import Document, SEARCH_SCHEMAS
+from examples.demos.semantic.seed import seed
 
 with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
     migrate()

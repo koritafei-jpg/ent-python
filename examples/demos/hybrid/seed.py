@@ -1,9 +1,9 @@
-"""写入演示文档与向量。"""
+"""混合检索 demo 种子数据。"""
 
 from __future__ import annotations
 
 from entpy.search import MockEmbedder
-from examples.demos.search_schemas import Document, Section
+from examples.demos.hybrid.models import Document, Section
 
 
 def seed(*, dim: int = 8) -> MockEmbedder:

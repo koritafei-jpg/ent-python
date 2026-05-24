@@ -1,5 +1,5 @@
 from entpy.ir import build_graph, load_schemas
-from examples.start.schemas import User, Car, Group, SCHEMAS
+from examples.start.models import User, Car, Group, SCHEMAS
 
 
 def test_load_start_schemas():

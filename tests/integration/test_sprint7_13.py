@@ -13,7 +13,7 @@ from entpy.privacy import Policy, always_deny, always_allow, Allow, Deny, Skip
 from entpy.privacy.policy import rule
 from entpy.runtime.errors import NotAllowedError
 from entpy.schema import Schema, field, CreateTimeMixin
-from examples.start.schemas import User, Car, Group, SCHEMAS
+from examples.start.models import User, Car, Group, SCHEMAS
 
 
 @Hook
@@ -124,7 +124,7 @@ def test_gremlin_driver_smoke():
     pytest.importorskip("gremlinpython")
     from entpy.dialect.gremlin.driver import GremlinDriver
     from entpy.runtime.registry import Registry
-    from examples.start.schemas import SCHEMAS
+    from examples.start.models import SCHEMAS
 
     reg = Registry.from_schemas(SCHEMAS)
     d = GremlinDriver("ws://localhost:8182/gremlin", reg)

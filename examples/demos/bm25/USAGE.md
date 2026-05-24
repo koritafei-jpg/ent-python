@@ -13,7 +13,7 @@
 
 ## 数据模型
 
-见 `examples/demos/search_schemas.py`（`ActiveSchema` + `BaseSchema`）：
+见 `examples/demos/bm25/models/`（`ActiveSchema` + `BaseSchema`）：
 
 - `documents`：id (UUID), create_time, title, category, lang, **content**（可检索）, **embedding**
 - `sections`：**document_id** (UUID FK), heading, content（子表）
@@ -29,8 +29,8 @@ python -m examples.demos.bm25.demo
 
 ```python
 from entpy.active import bind, migrate, search
-from examples.demos.search_schemas import Document, SEARCH_SCHEMAS
-from examples.demos.search_seed import seed
+from examples.demos.bm25.models import Document, SEARCH_SCHEMAS
+from examples.demos.bm25.seed import seed
 
 with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
     migrate()

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from entpy.codegen.stubgen import generate_stubs
 from entpy.codegen.thin import generate_thin_wrappers
-from examples.start.schemas import SCHEMAS
+from examples.start.models import SCHEMAS
 
 
 def test_generate_stubs(tmp_path: Path):

@@ -92,6 +92,26 @@ users = client.query(User).where(F(User).name.eq("Alice")).all()
 | 边遍历 | `traverse(e).out("knows").all()` | `client.traverse(e, "knows").all()` |
 | 更新边 | `update(Person, id).add("knows", peer_id).save()` | 同左 |
 
+### Observer（自动注册，Schema 零依赖）
+
+将 `UserObserver` 放在与 Schema 同级的 `observers` 包（如 `examples/start/observers/user.py`），`bind()` / `Client.open()` 会按命名约定自动发现并挂接 Hook，**无需在 Schema 中 import Observer**。
+
+```python
+from entpy.observer import Observer
+
+class UserObserver(Observer):
+    def creating(self, mutation):
+        mutation.fields["name"] = mutation.fields["name"].strip()
+
+    def on_save(self, mutation):
+        ...  # CREATE / UPDATE 持久化后，mutation.id 已赋值
+
+    def on_delete(self, mutation):
+        ...  # DELETE 成功后
+```
+
+也可显式绑定：`@observes(User)`。自定义扫描包：`bind(..., observer_packages=["myapp.observers"])`.
+
 ### 异步
 
 ```python
@@ -153,7 +173,7 @@ python -m examples.demos.gremlin.demo
 
 ```python
 from entpy.active import bind, migrate, F
-from examples.demos.relational.schemas import Article, Comment, SCHEMAS
+from examples.demos.relational.models import Article, Comment, SCHEMAS
 from examples.demos.relational.seed import seed
 
 with bind("sqlite:///:memory:", schemas=SCHEMAS):
@@ -169,8 +189,8 @@ with bind("sqlite:///:memory:", schemas=SCHEMAS):
 ```python
 from entpy.active import bind, migrate, search
 from examples.demos.common.search_helpers import filter_hits
-from examples.demos.search_schemas import Document, SEARCH_SCHEMAS
-from examples.demos.search_seed import seed
+from examples.demos.bm25.models import Document, SEARCH_SCHEMAS
+from examples.demos.bm25.seed import seed
 
 with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
     migrate()
@@ -186,7 +206,7 @@ with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
 
 ```python
 from entpy.active import bind, traverse, clear_graph, ensure_connection
-from examples.demos.gremlin.schemas import Person, GREMLIN_SCHEMAS
+from examples.demos.gremlin.models import Person, GREMLIN_SCHEMAS
 from examples.demos.gremlin.seed import seed
 
 with bind("ws://localhost:8182/gremlin", schemas=GREMLIN_SCHEMAS, storage="gremlin"):

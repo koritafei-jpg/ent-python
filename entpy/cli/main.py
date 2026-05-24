@@ -101,7 +101,7 @@ def _embedder_from_name(name: str, dim: int):
 
 @search_app.command("reindex")
 def search_reindex(
-    module: str = typer.Argument(..., help="Python module with SCHEMAS (e.g. examples.rag.schemas)"),
+    module: str = typer.Argument(..., help="Python module with SCHEMAS (e.g. examples.rag.models)"),
     schema: str = typer.Option(..., "--schema", "-s", help="Searchable schema class name"),
     dsn: str = typer.Option(..., "--dsn", help="SQL database URL"),
     embedder: str = typer.Option("mock", "--embedder", "-e", help="Embedder: mock"),

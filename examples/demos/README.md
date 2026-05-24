@@ -8,21 +8,31 @@
 examples/demos/
 ├── README.md                 # 本说明
 ├── common/
-│   └── search_helpers.py     # 检索命中 + SQL 等值条件后过滤
-├── search_schemas.py         # Document / Section（检索类 demo 共用）
-├── search_seed.py            # 检索 demo 种子数据与 MockEmbedder
+│   ├── search_helpers.py     # 检索命中 + SQL 等值条件后过滤
+│   └── observer_log.py       # Observer 事件记录（工具，非模型）
 ├── relational/               # 演示 1：SQL CRUD / 复杂查询 / FK 子表
-│   ├── schemas.py
+│   ├── models/               # Author / Article / Comment
+│   ├── observers/
 │   ├── seed.py
 │   └── demo.py
 ├── bm25/                     # 演示 2：BM25 全文检索
+│   ├── models/               # Document / Section
+│   ├── observers/
+│   ├── seed.py
 │   └── demo.py
 ├── semantic/                 # 演示 3：语义向量检索
+│   ├── models/
+│   ├── observers/
+│   ├── seed.py
 │   └── demo.py
 ├── hybrid/                   # 演示 4：BM25 + 语义混合（RRF）
+│   ├── models/
+│   ├── observers/
+│   ├── seed.py
 │   └── demo.py
 └── gremlin/                  # 演示 5：图查询 / 多跳遍历
-    ├── schemas.py
+    ├── models/               # Person / Post / Comment
+    ├── observers/
     ├── seed.py
     └── demo.py
 ```
@@ -88,9 +98,12 @@ class User(ActiveSchema, BaseSchema):
 
 | 模块 | 作用 |
 |------|------|
-| `search_schemas.py` | `Document`（可检索）+ `Section`（`document_id` UUID FK 子表） |
-| `search_seed.py` | 写入示例文档与 8 维 mock 向量 |
+| `{demo}/models/` | 各子 demo 独立模型（每类一文件） |
+| `{demo}/observers/` | 各子 demo 独立 Observer（`on_save` / `on_delete`） |
+| `{demo}/seed.py` | 各子 demo 种子数据 |
 | `common/search_helpers.py` | `filter_hits(schema, hits, category=..., lang=...)` 对检索结果做 SQL 后过滤 |
+
+每个子 demo 的 `models/` 与 `observers/` 并列，由 `bind()` 按包路径自动发现 Observer，**模型无需 import Observer**。
 
 ### 边遍历 vs FK 子表
 
@@ -109,7 +122,7 @@ class User(ActiveSchema, BaseSchema):
 
 ```python
 from entpy.active import bind, migrate, F
-from examples.demos.relational.schemas import Article, Author, Comment, SCHEMAS
+from examples.demos.relational.models import Article, Author, Comment, SCHEMAS
 from examples.demos.relational.seed import seed
 
 with bind("sqlite:///:memory:", schemas=SCHEMAS):
@@ -141,8 +154,8 @@ with bind("sqlite:///:memory:", schemas=SCHEMAS):
 ```python
 from entpy.active import bind, migrate, search
 from examples.demos.common.search_helpers import filter_hits
-from examples.demos.search_schemas import Document, Section, SEARCH_SCHEMAS
-from examples.demos.search_seed import seed
+from examples.demos.bm25.models import Document, Section, SEARCH_SCHEMAS
+from examples.demos.bm25.seed import seed
 
 with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
     migrate()
@@ -169,8 +182,8 @@ with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
 ```python
 from entpy.active import bind, migrate, search
 from examples.demos.common.search_helpers import filter_hits
-from examples.demos.search_schemas import Document, SEARCH_SCHEMAS
-from examples.demos.search_seed import seed
+from examples.demos.semantic.models import Document, SEARCH_SCHEMAS
+from examples.demos.semantic.seed import seed
 
 with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
     migrate()
@@ -194,8 +207,8 @@ with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
 ```python
 from entpy.active import bind, migrate, search
 from examples.demos.common.search_helpers import filter_hits
-from examples.demos.search_schemas import Document, SEARCH_SCHEMAS
-from examples.demos.search_seed import seed
+from examples.demos.hybrid.models import Document, SEARCH_SCHEMAS
+from examples.demos.hybrid.seed import seed
 
 with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
     migrate()
@@ -227,7 +240,7 @@ with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
 
 ```python
 from entpy.active import bind, F, traverse, clear_graph, ensure_connection
-from examples.demos.gremlin.schemas import Comment, Person, Post, GREMLIN_SCHEMAS
+from examples.demos.gremlin.models import Comment, Person, Post, GREMLIN_SCHEMAS
 from examples.demos.gremlin.seed import seed
 
 with bind("ws://localhost:8182/gremlin", schemas=GREMLIN_SCHEMAS, storage="gremlin"):

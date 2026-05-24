@@ -10,7 +10,7 @@ from entpy.dialect.sqlalchemy.metadata import build_metadata
 from entpy.dialect.sqlalchemy.migrate import create_schema
 from entpy.dialect.sqlalchemy.spec import DeleteSpec, QuerySpec
 from entpy.dialect.sqlalchemy import sqlgraph
-from entpy.ir.policies import collect_hooks, collect_interceptors, collect_policies
+from entpy.ir.policies import collect_interceptors, collect_policies, collect_runtime_hooks
 from entpy.runtime.builders import CreateBuilder, DeleteBuilder, QueryBuilder, UpdateBuilder
 from entpy.runtime.registry import Registry
 from entpy.runtime.predicate import PredicateFactory
@@ -28,6 +28,7 @@ class Client:
         hooks: list | None = None,
         interceptors: list | None = None,
         policies: list | None = None,
+        observers: list | None = None,
         ctx: dict[str, Any] | None = None,
     ) -> None:
         self._driver = driver
@@ -35,6 +36,7 @@ class Client:
         self._hooks = hooks or []
         self._interceptors = interceptors or []
         self._policies = policies or []
+        self._observers = observers or []
         self._ctx = ctx if ctx is not None else {}
 
     def migrate(self) -> None:
@@ -51,6 +53,7 @@ class Client:
         *,
         schemas: list[type[Schema]],
         storage: str = "sql",
+        observer_packages: list[str] | None = None,
         ctx: dict[str, Any] | None = None,
         **engine_kw: Any,
     ) -> Client:
@@ -62,11 +65,14 @@ class Client:
             driver = GremlinDriver.from_url(dsn, registry=registry)
         else:
             driver = SQLAlchemyDriver.from_url(dsn, **engine_kw)
-        hooks = collect_hooks(schemas)
+        hooks, observers = collect_runtime_hooks(
+            schemas, observer_packages=observer_packages
+        )
         return cls(
             driver,
             registry,
             hooks=hooks,
+            observers=observers,
             interceptors=collect_interceptors(schemas),
             policies=collect_policies(schemas),
             ctx=ctx,
@@ -81,15 +87,22 @@ class Client:
         hooks: list | None = None,
         interceptors: list | None = None,
         policies: list | None = None,
+        observer_packages: list[str] | None = None,
         ctx: dict[str, Any] | None = None,
         **engine_kw: Any,
     ) -> Client:
         registry = Registry.from_schemas(schemas, storage="sql")
         driver = SQLAlchemyDriver.from_url(dsn, **engine_kw)
+        merged_hooks, observers = collect_runtime_hooks(
+            schemas,
+            observer_packages=observer_packages,
+            extra_hooks=hooks,
+        )
         return cls(
             driver,
             registry,
-            hooks=(hooks or []) + collect_hooks(schemas),
+            hooks=merged_hooks,
+            observers=observers,
             interceptors=(interceptors or []) + collect_interceptors(schemas),
             policies=(policies or []) + collect_policies(schemas),
             ctx=ctx,

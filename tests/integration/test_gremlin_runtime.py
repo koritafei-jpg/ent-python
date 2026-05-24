@@ -7,7 +7,7 @@ from datetime import datetime
 import pytest
 
 from entpy.runtime import Client
-from examples.start.schemas import User, Car, Group, SCHEMAS
+from examples.start.models import User, Car, Group, SCHEMAS
 
 GREMLIN_URL = "ws://localhost:8182/gremlin"
 

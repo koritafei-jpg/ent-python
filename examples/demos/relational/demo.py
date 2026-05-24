@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 from entpy.active import bind, migrate, F
-from examples.demos.relational.schemas import Article, Author, Comment, SCHEMAS
+from examples.demos.relational.models import Article, Author, Comment, SCHEMAS
 from examples.demos.relational.seed import seed
+from examples.demos.common.print_observers import print_observer_events
 
 
 def main() -> None:
@@ -57,6 +58,14 @@ def main() -> None:
         art = Article.get(title="entpy SQL guide")
         print(f"  article id={art.id}")
         print(f"  create_time={art.create_time} delete_time={art.delete_time}")
+
+        print("\n=== 8. 删除（触发 on_delete）===")
+        draft_art = Article.get(title="Gremlin overview")
+        to_remove = Comment.query(article_id=draft_art.id).first()
+        if to_remove is not None:
+            to_remove.delete()
+
+        print_observer_events()
 
 
 if __name__ == "__main__":

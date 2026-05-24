@@ -35,7 +35,7 @@ python -m examples.demos.gremlin.demo
 
 ```python
 from entpy.active import bind, F, traverse, clear_graph, ensure_connection
-from examples.demos.gremlin.schemas import Person, Post, GREMLIN_SCHEMAS
+from examples.demos.gremlin.models import Person, Post, GREMLIN_SCHEMAS
 from examples.demos.gremlin.seed import seed
 
 with bind("ws://localhost:8182/gremlin", schemas=GREMLIN_SCHEMAS, storage="gremlin"):

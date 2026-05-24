@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from entpy.runtime import Client
-from examples.demos.gremlin.schemas import Person, GREMLIN_SCHEMAS
+from examples.demos.gremlin.models import Person, GREMLIN_SCHEMAS
 
 
 def test_traverse_chain_two_hops_sqlite():

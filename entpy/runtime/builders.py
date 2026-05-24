@@ -17,6 +17,7 @@ from entpy.schema.base import Schema, View
 from entpy.runtime.entity import Entity
 from entpy.runtime.errors import NotFoundError
 from entpy.runtime.hook import chain_hooks
+from entpy.observer.hooks import notify_after_observers
 from entpy.runtime.interceptor import QueryRequest, chain_interceptors
 from entpy.runtime.mutation import Mutation, Op
 from entpy.privacy.policy import eval_mutation, eval_query
@@ -75,6 +76,8 @@ class CreateBuilder:
                 row_id = sqlgraph.create_node(
                     session, self._client._registry.tables, spec
                 )
+        mutation.id = row_id
+        notify_after_observers(self._client._observers, mutation)
         return Entity(self._schema, {**self._fields, "id": row_id}, self._client)
 
 
@@ -194,6 +197,10 @@ class UpdateBuilder:
                 graph_ops.update_node(session.g, self._client._registry, spec)
             else:
                 sqlgraph.update_node(session, self._client._registry.tables, spec)
+        notify_after_observers(
+            self._client._observers,
+            Mutation(self._schema, Op.UPDATE_ONE, id=self._id, fields=dict(self._fields)),
+        )
         return self._client.query(self._schema).where(
             self._client.F(self._schema).id.eq(self._id)
         ).only()
@@ -223,7 +230,13 @@ class DeleteBuilder:
             self._ids = [r.id for r in rows]
         if not self._ids and not self._predicates:
             raise ValueError("delete requires one(id) or where")
-        mutation = Mutation(self._schema, Op.DELETE, id=self._ids[0] if len(self._ids) == 1 else None)
+        op = Op.DELETE_ONE if len(self._ids) == 1 else Op.DELETE
+        mutation = Mutation(
+            self._schema,
+            op,
+            id=self._ids[0] if len(self._ids) == 1 else None,
+        )
+        mutation = chain_hooks(self._client._hooks, mutation)
         eval_mutation(self._client._ctx, self._client._policies, mutation)
         with self._client._driver.session() as session:
             if _is_gremlin(self._client):
@@ -231,8 +244,11 @@ class DeleteBuilder:
 
                 preds = list(self._predicates) if not self._ids else []
                 spec = DeleteSpec(table=label, ids=self._ids, predicates=preds)
-                return graph_ops.delete_nodes(session.g, self._client._registry, spec)
-            table = self._client._registry.table_for(self._schema)
-            sql_preds = [p.apply(table) for p in self._predicates] if not self._ids else []
-            spec = DeleteSpec(table=table.name, ids=self._ids, predicates=sql_preds)
-            return sqlgraph.delete_nodes(session, self._client._registry.tables, spec)
+                count = graph_ops.delete_nodes(session.g, self._client._registry, spec)
+            else:
+                table = self._client._registry.table_for(self._schema)
+                sql_preds = [p.apply(table) for p in self._predicates] if not self._ids else []
+                spec = DeleteSpec(table=table.name, ids=self._ids, predicates=sql_preds)
+                count = sqlgraph.delete_nodes(session, self._client._registry.tables, spec)
+        notify_after_observers(self._client._observers, mutation)
+        return count

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import pytest
 
 from entpy.active import async_bind, bind, migrate, migrate_async, get_async_client, F
-from examples.start.schemas import User, Car, SCHEMAS
+from examples.start.models import User, Car, SCHEMAS
 
 
 def test_bind_create_query():

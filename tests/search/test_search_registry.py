@@ -2,7 +2,7 @@
 
 from entpy.runtime.registry import Registry
 from entpy.search.registry import SearchRegistry
-from examples.rag.schemas import Chunk, SCHEMAS as RAG_SCHEMAS
+from examples.rag.models import Chunk, SCHEMAS as RAG_SCHEMAS
 
 
 def test_search_registry_chunk():

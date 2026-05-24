@@ -1,4 +1,4 @@
-"""可检索 Document + Section（BaseSchema + document_id UUID FK）。"""
+"""Document 可检索实体（BM25 demo）。"""
 
 from __future__ import annotations
 
@@ -25,16 +25,3 @@ class Document(SearchMixin, ActiveSchema, BaseSchema):
             vector_field="embedding",
             hybrid=Hybrid(bm25_backend="postgres_ts", rrf_k=60, top_k=10),
         )
-
-
-class Section(ActiveSchema, BaseSchema):
-    @classmethod
-    def fields(cls):
-        return [
-            field.uuid("document_id"),
-            field.string("heading"),
-            field.text("content"),
-        ]
-
-
-SEARCH_SCHEMAS = [Document, Section]

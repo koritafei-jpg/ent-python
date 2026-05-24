@@ -3,7 +3,7 @@
 from entpy.runtime import Client
 from entpy.runtime.hooks.embed_on_save import embed_on_save_hook
 from entpy.search import MockEmbedder
-from examples.rag.schemas import Chunk, SCHEMAS
+from examples.rag.models import Chunk, SCHEMAS
 
 
 def test_embed_on_save_populates_vector():

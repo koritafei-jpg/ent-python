@@ -5,7 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from entpy.active import update
-from examples.demos.gremlin.schemas import Comment, Person, Post
+from examples.demos.gremlin.models import Comment, Person, Post
 
 
 def seed() -> dict[str, UUID]:

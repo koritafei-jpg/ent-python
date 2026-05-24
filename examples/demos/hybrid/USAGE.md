@@ -19,7 +19,7 @@ python -m examples.demos.hybrid.demo
 
 ## 数据模型
 
-`Document` / `Section` 继承 `BaseSchema`（UUID 主键 + 时间戳）；`Section.document_id` 为 UUID 外键。详见 `search_schemas.py`。
+`Document` / `Section` 继承 `BaseSchema`（UUID 主键 + 时间戳）；`Section.document_id` 为 UUID 外键。详见 `examples/demos/hybrid/models/`。
 
 ## Schema 配置
 
@@ -37,8 +37,8 @@ SearchConfig(
 
 ```python
 from entpy.active import bind, migrate, search
-from examples.demos.search_schemas import Document, SEARCH_SCHEMAS
-from examples.demos.search_seed import seed
+from examples.demos.hybrid.models import Document, SEARCH_SCHEMAS
+from examples.demos.hybrid.seed import seed
 
 with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
     migrate()

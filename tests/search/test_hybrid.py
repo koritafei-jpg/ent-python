@@ -1,7 +1,7 @@
 from entpy.runtime import Client
 from entpy.search import MockEmbedder
 from entpy.search.backends.base import ScoredHit  # noqa: F401
-from examples.rag.schemas import Chunk, SCHEMAS
+from examples.rag.models import Chunk, SCHEMAS
 
 
 def test_chunk_hybrid_search():

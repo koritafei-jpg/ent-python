@@ -20,7 +20,7 @@ python -m examples.demos.relational.demo
 
 ```python
 from entpy.active import bind, migrate, F
-from examples.demos.relational.schemas import Article, Author, Comment, SCHEMAS
+from examples.demos.relational.models import Article, Author, Comment, SCHEMAS
 from examples.demos.relational.seed import seed
 
 with bind("sqlite:///:memory:", schemas=SCHEMAS):

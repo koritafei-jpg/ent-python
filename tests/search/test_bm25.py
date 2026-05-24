@@ -4,7 +4,7 @@ from entpy.runtime import Client
 from entpy.search.backends.opensearch import MockOpenSearchBackend
 from entpy.search.builder import SearchBuilder
 from entpy.search.registry import SearchRegistry
-from examples.rag.schemas import Chunk, SCHEMAS
+from examples.rag.models import Chunk, SCHEMAS
 
 
 def test_mock_opensearch_backend():

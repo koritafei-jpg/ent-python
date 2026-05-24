@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from examples.demos.relational.schemas import Article, Author, Comment
+from examples.demos.relational.models import Article, Author, Comment
 
 
 def seed() -> dict[str, UUID]:

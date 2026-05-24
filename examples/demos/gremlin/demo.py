@@ -7,8 +7,9 @@ import os
 import sys
 
 from entpy.active import bind, F, traverse, clear_graph, ensure_connection
-from examples.demos.gremlin.schemas import Comment, Person, Post, GREMLIN_SCHEMAS
+from examples.demos.gremlin.models import Comment, Person, Post, GREMLIN_SCHEMAS
 from examples.demos.gremlin.seed import seed
+from examples.demos.common.print_observers import print_observer_events
 
 GREMLIN_URL = os.environ.get("ENTPY_GREMLIN_URL", "ws://localhost:8182/gremlin")
 
@@ -55,6 +56,8 @@ def run_demo() -> None:
                 print(
                     f"  {person.name} -> {fr.name} -> post '{post.title}' -> {n} comment(s)"
                 )
+
+    print_observer_events()
 
 
 def main() -> None:

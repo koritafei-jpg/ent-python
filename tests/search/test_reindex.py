@@ -8,7 +8,7 @@ from entpy.cli.main import app
 from entpy.runtime import Client
 from entpy.search import MockEmbedder
 from entpy.search.reindex import reindex_async, reindex_sync
-from examples.rag.schemas import Chunk, SCHEMAS
+from examples.rag.models import Chunk, SCHEMAS
 
 
 def _stub_vec():
@@ -64,7 +64,7 @@ def test_cli_search_reindex():
         [
             "search",
             "reindex",
-            "examples.rag.schemas",
+            "examples.rag.models",
             "--schema",
             "Chunk",
             "--dsn",

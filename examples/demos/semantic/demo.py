@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 from entpy.active import bind, migrate, search
-from examples.demos.search_schemas import Document, Section, SEARCH_SCHEMAS
-from examples.demos.search_seed import seed
+from examples.demos.semantic.models import Document, Section, SEARCH_SCHEMAS
+from examples.demos.semantic.seed import seed
+from examples.demos.common.print_observers import print_observer_events
 from examples.demos.common.search_helpers import filter_hits
 
 
@@ -38,6 +39,8 @@ def main() -> None:
             n = len(Section.query(document_id=doc.id).all())
             print(f"  doc={doc.title} sections={n}")
             print(f"    create_time={doc.create_time}")
+
+        print_observer_events()
 
 
 if __name__ == "__main__":

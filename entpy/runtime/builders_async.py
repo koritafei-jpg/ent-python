@@ -11,6 +11,7 @@ from entpy.runtime.builders import CreateBuilder, UpdateBuilder, _is_gremlin
 from entpy.runtime.entity import Entity
 from entpy.runtime.errors import NotFoundError
 from entpy.runtime.hook import chain_hooks
+from entpy.observer.hooks import notify_after_observers
 from entpy.runtime.interceptor import QueryRequest
 from entpy.runtime.mutation import Mutation, Op
 from entpy.runtime.spec_helpers import create_spec, update_spec
@@ -39,6 +40,8 @@ class AsyncCreateBuilder(CreateBuilder):
                 row_id = await sqlgraph_async.create_node(
                     session, self._client._registry.tables, spec
                 )
+        mutation.id = row_id
+        notify_after_observers(self._client._observers, mutation)
         return Entity(self._schema, {**self._fields, "id": row_id}, self._client)
 
 
@@ -63,6 +66,10 @@ class AsyncUpdateBuilder(UpdateBuilder):
                 await sqlgraph_async.update_node(
                     session, self._client._registry.tables, spec
                 )
+        notify_after_observers(
+            self._client._observers,
+            Mutation(self._schema, Op.UPDATE_ONE, id=self._id, fields=dict(self._fields)),
+        )
         return await self._client.query(self._schema).where(
             self._client.F(self._schema).id.eq(self._id)
         ).only()

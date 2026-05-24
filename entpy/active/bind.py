@@ -22,12 +22,18 @@ def bind(
     *,
     schemas: list[type[Schema]],
     storage: str = "sql",
+    observer_packages: list[str] | None = None,
     ctx: dict[str, Any] | None = None,
     **engine_kw: Any,
 ) -> Iterator[Client]:
     """绑定同步 Client；块内使用 User.create / User.query。"""
     client = Client.open(
-        dsn, schemas=schemas, storage=storage, ctx=ctx, **engine_kw
+        dsn,
+        schemas=schemas,
+        storage=storage,
+        observer_packages=observer_packages,
+        ctx=ctx,
+        **engine_kw,
     )
     token = set_client(client)
     try:
@@ -44,12 +50,18 @@ async def async_bind(
     *,
     schemas: list[type[Schema]],
     storage: str = "sql",
+    observer_packages: list[str] | None = None,
     ctx: dict[str, Any] | None = None,
     **engine_kw: Any,
 ) -> AsyncIterator[AsyncClient]:
     """绑定异步 Client；块内使用 await client.create(...).save()。"""
     client = AsyncClient.open(
-        dsn, schemas=schemas, storage=storage, ctx=ctx, **engine_kw
+        dsn,
+        schemas=schemas,
+        storage=storage,
+        observer_packages=observer_packages,
+        ctx=ctx,
+        **engine_kw,
     )
     token = set_async_client(client)
     try:

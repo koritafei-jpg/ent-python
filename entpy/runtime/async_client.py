@@ -7,7 +7,7 @@ from typing import Any
 from entpy.dialect.sqlalchemy.async_driver import AsyncSQLAlchemyDriver
 from entpy.dialect.sqlalchemy.metadata import build_metadata
 from entpy.dialect.sqlalchemy.migrate import create_schema
-from entpy.ir.policies import collect_hooks, collect_interceptors, collect_policies
+from entpy.ir.policies import collect_interceptors, collect_policies, collect_runtime_hooks
 from entpy.runtime.builders_async import (
     AsyncCreateBuilder,
     AsyncDeleteBuilder,
@@ -30,6 +30,7 @@ class AsyncClient:
         hooks: list | None = None,
         interceptors: list | None = None,
         policies: list | None = None,
+        observers: list | None = None,
         ctx: dict[str, Any] | None = None,
     ) -> None:
         self._driver = driver
@@ -37,6 +38,7 @@ class AsyncClient:
         self._hooks = hooks or []
         self._interceptors = interceptors or []
         self._policies = policies or []
+        self._observers = observers or []
         self._ctx = ctx if ctx is not None else {}
 
     async def migrate(self) -> None:
@@ -61,6 +63,7 @@ class AsyncClient:
         *,
         schemas: list[type[Schema]],
         storage: str = "sql",
+        observer_packages: list[str] | None = None,
         ctx: dict[str, Any] | None = None,
         **engine_kw: Any,
     ) -> AsyncClient:
@@ -72,10 +75,14 @@ class AsyncClient:
             driver = GremlinDriver.from_url(dsn, registry=registry)
         else:
             driver = AsyncSQLAlchemyDriver.from_url(dsn, **engine_kw)
+        hooks, observers = collect_runtime_hooks(
+            schemas, observer_packages=observer_packages
+        )
         return cls(
             driver,
             registry,
-            hooks=collect_hooks(schemas),
+            hooks=hooks,
+            observers=observers,
             interceptors=collect_interceptors(schemas),
             policies=collect_policies(schemas),
             ctx=ctx,

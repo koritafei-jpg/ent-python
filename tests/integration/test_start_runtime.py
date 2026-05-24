@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from entpy.runtime import Client
-from examples.start.schemas import User, Car, Group, SCHEMAS
+from examples.start.models import User, Car, Group, SCHEMAS
 
 
 def test_start_create_query():

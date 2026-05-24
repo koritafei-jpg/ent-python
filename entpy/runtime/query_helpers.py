@@ -13,9 +13,17 @@ from entpy.schema.base import Schema
 
 
 def make_limited_request(
-    schema: type[Schema], limit: int, with_edges: list[str]
+    schema: type[Schema],
+    limit: int,
+    with_edges: list[str],
+    predicates: list | None = None,
 ) -> QueryRequest:
-    return QueryRequest(schema=schema, limit=limit, with_edges=list(with_edges))
+    return QueryRequest(
+        schema=schema,
+        predicates=list(predicates or []),
+        limit=limit,
+        with_edges=list(with_edges),
+    )
 
 
 def eval_and_fetch_entities(

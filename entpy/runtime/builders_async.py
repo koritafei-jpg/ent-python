@@ -177,6 +177,7 @@ class AsyncQueryBuilder:
     async def all(self) -> list[Entity]:
         request = QueryRequest(
             schema=self._schema,
+            predicates=list(self._predicates),
             limit=self._limit,
             with_edges=list(self._with),
         )
@@ -188,7 +189,9 @@ class AsyncQueryBuilder:
         return [Entity(self._schema, r, self._client) for r in rows]
 
     async def _query_with_limit(self, limit: int) -> list[Entity]:
-        request = make_limited_request(self._schema, limit, list(self._with))
+        request = make_limited_request(
+            self._schema, limit, list(self._with), self._predicates
+        )
         from entpy.active.context import get_effective_ctx
         from entpy.privacy.policy import eval_query
 

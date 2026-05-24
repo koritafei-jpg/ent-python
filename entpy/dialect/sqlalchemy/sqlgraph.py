@@ -169,12 +169,42 @@ def _apply_edge_on_create(session: Session, tables: dict, src_id: Any, edge: Edg
                 session, jt, {owner_col: src_id, peer_col: tid}
             )
         return
-    if edge.rel in (RelType.O2M, RelType.O2O) and edge.fk_columns:
+    if edge.rel == RelType.O2O and edge.fk_columns:
+        _apply_edge_o2o_fk(session, tables, src_id, edge)
+        return
+    if edge.rel in (RelType.O2M, RelType.M2O) and edge.fk_columns:
         peer = tables[edge.peer_table]
         fk = edge.fk_columns[0]
         session.execute(
             update(peer).where(peer.c.id.in_(edge.ids)).values({fk: src_id})
         )
+
+
+def _apply_edge_o2o_fk(
+    session: Session, tables: dict, src_id: Any, edge: EdgeSpec
+) -> None:
+    """O2O：先解除原独占关联，再绑定新 peer（避免多个 peer 同时指向同一 owner）。"""
+    peer = tables[edge.peer_table]
+    fk = edge.fk_columns[0]
+    fk_attr = getattr(peer.c, fk)
+    clear = update(peer).where(fk_attr == src_id)
+    if edge.ids:
+        clear = clear.where(~peer.c.id.in_(edge.ids))
+    session.execute(clear.values({fk: None}))
+    if edge.ids:
+        session.execute(
+            update(peer).where(peer.c.id.in_(edge.ids)).values({fk: src_id})
+        )
+
+
+def _apply_edges_on_update(
+    session: Session, tables: dict, src_id: Any, edge: EdgeSpec
+) -> None:
+    """Update 时同步边；M2M/O2M 保持追加语义，O2O 使用独占替换。"""
+    if edge.rel == RelType.O2O and edge.fk_columns:
+        _apply_edge_o2o_fk(session, tables, src_id, edge)
+    else:
+        _apply_edge_on_create(session, tables, src_id, edge)
 
 
 def update_node(session: Session, tables: dict, spec: UpdateSpec) -> dict[str, Any] | None:
@@ -206,7 +236,7 @@ def update_node(session: Session, tables: dict, spec: UpdateSpec) -> dict[str, A
             return None
         row = dict(mapped)
     for edge in spec.edges:
-        _apply_edge_on_create(session, tables, spec.id, edge)
+        _apply_edges_on_update(session, tables, spec.id, edge)
     return row
 
 

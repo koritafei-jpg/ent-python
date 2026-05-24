@@ -43,7 +43,7 @@ def update_node(g, registry: Registry, spec: UpdateSpec) -> dict[str, Any] | Non
             trav = trav.property(k, _gremlin_value(v))
         row = _vm_to_dict(trav.valueMap(True).next())
     for edge in spec.edges:
-        _link_edge(g, registry, vid, edge)
+        _sync_edge_on_update(g, registry, vid, edge)
     if row is not None:
         return row
     rows = g.V(vid).hasLabel(label).valueMap(True).toList()
@@ -176,6 +176,18 @@ def get_by_id(g, label: str, vid: Any) -> dict | None:
     if not rows:
         return None
     return _vm_to_dict(rows[0])
+
+
+def _sync_edge_on_update(g, registry: Registry, from_id: Any, edge: EdgeSpec) -> None:
+    """Update 边：O2O 先解除旧独占边再链接；其余类型保持追加语义。"""
+    re = _resolve_edge_spec(registry, edge)
+    if re is None:
+        return
+    if re.rel == RelType.O2O and re.fk_columns and not re.inverse:
+        fk = re.fk_columns[0]
+        peer_label = vertex_label(re.peer)
+        g.V().hasLabel(peer_label).has(fk, from_id).properties(fk).drop().iterate()
+    _link_edge(g, registry, from_id, edge)
 
 
 def _link_edge(g, registry: Registry, from_id: Any, edge: EdgeSpec) -> None:

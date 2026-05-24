@@ -45,7 +45,7 @@ async def update_node(session: AsyncSession, tables: dict, spec: UpdateSpec) -> 
 
         def _apply_edges(sync_session) -> None:
             for edge in spec.edges:
-                sqlgraph._apply_edge_on_create(sync_session, tables, spec.id, edge)
+                sqlgraph._apply_edges_on_update(sync_session, tables, spec.id, edge)
 
         await session.run_sync(_apply_edges)
     return row

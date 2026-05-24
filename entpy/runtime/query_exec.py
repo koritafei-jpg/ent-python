@@ -8,12 +8,12 @@ from typing import Any
 from entpy.dialect.sqlalchemy import sqlgraph, sqlgraph_async
 from entpy.dialect.sqlalchemy.spec import QuerySpec
 from entpy.runtime.driver_util import is_gremlin_client as _is_gremlin
-from entpy.runtime.interceptor import QueryRequest, chain_interceptors
+from entpy.runtime.interceptor import (
+    QueryRequest,
+    chain_interceptors,
+    chain_interceptors_async,
+)
 from entpy.schema.base import Schema
-
-# 同步 interceptor 桥接到 async 查询时的上限（秒），防止永久阻塞 event loop 线程
-_INTERCEPTOR_BRIDGE_TIMEOUT_SEC = 300.0
-
 
 def execute_query_sync(
     client: Any,
@@ -114,33 +114,18 @@ async def execute_query_async(
     with_edges: list[str],
     request: QueryRequest,
 ) -> list[dict[str, Any]]:
-    if not client._interceptors:
+    async def terminal_execute(req: QueryRequest) -> list[dict[str, Any]]:
         return await _execute_query_async_impl(
             client,
             schema,
             predicates,
             limit=limit,
             with_edges=with_edges,
-            request=request,
+            request=req,
         )
 
-    loop = asyncio.get_running_loop()
-
-    def run_interceptor_chain(req: QueryRequest) -> list[dict[str, Any]]:
-        def terminal_execute(r: QueryRequest) -> list[dict[str, Any]]:
-            future = asyncio.run_coroutine_threadsafe(
-                _execute_query_async_impl(
-                    client,
-                    schema,
-                    predicates,
-                    limit=limit,
-                    with_edges=with_edges,
-                    request=r,
-                ),
-                loop,
-            )
-            return future.result(timeout=_INTERCEPTOR_BRIDGE_TIMEOUT_SEC)
-
-        return chain_interceptors(client._interceptors, terminal_execute, req)
-
-    return await asyncio.to_thread(run_interceptor_chain, request)
+    if not client._interceptors:
+        return await terminal_execute(request)
+    return await chain_interceptors_async(
+        client._interceptors, terminal_execute, request
+    )

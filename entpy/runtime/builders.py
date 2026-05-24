@@ -170,6 +170,7 @@ class QueryBuilder:
     def all(self) -> list[Entity]:
         request = QueryRequest(
             schema=self._schema,
+            predicates=list(self._predicates),
             limit=self._limit,
             with_edges=list(self._with),
         )
@@ -185,7 +186,9 @@ class QueryBuilder:
         )
 
     def _query_with_limit(self, limit: int) -> list[Entity]:
-        request = make_limited_request(self._schema, limit, list(self._with))
+        request = make_limited_request(
+            self._schema, limit, list(self._with), self._predicates
+        )
         return eval_and_fetch_entities(
             self._client,
             self._schema,

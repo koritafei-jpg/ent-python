@@ -381,6 +381,27 @@ def test_migrate_rejects_async_bind_only():
     asyncio.run(run())
 
 
+def test_active_entity_edit_link_set_links():
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        u = User.create(name="U", age=1)
+        g1 = Group.create(name="alpha")
+        g2 = Group.create(name="beta")
+        u.link("groups", g1.id)
+        assert {x.name for x in u.out("groups").all()} == {"alpha"}
+        u.set_links("groups", g2.id)
+        assert {x.name for x in u.out("groups").all()} == {"beta"}
+        u.edit().set("age", 99).save()
+        assert User.get(id=u.id).age == 99
+
+
+def test_query_unknown_kw_field_value_error():
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        with pytest.raises(ValueError, match="unknown field"):
+            User.query(nosuch=1).all()
+
+
 def test_add_unknown_edge_raises_at_call_time():
     import uuid
 

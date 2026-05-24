@@ -183,5 +183,41 @@ class ActiveEntity(Entity):
             raise ValueError("cannot delete unsaved entity")
         await client.delete(self._schema).one(self.id).execute()
 
+    def edit(self) -> Any:
+        """返回本行的 Update 构建器。
+
+        同步：``u.edit().set("age", 2).save()`` / ``u.edit().add("groups", g.id).save()``
+        异步：``await u.edit().set_edges("groups", g.id).save()``
+        """
+        if self._new or self.id is None:
+            raise ValueError("cannot edit unsaved entity; use save() first")
+        if self._async:
+            client = self._client or get_async_client()
+        else:
+            from entpy.active.context import require_sync_client
+
+            client = self._client or require_sync_client()
+        return client.update(self._schema, self.id)
+
+    def link(self, edge: str, *peer_ids: Any) -> ActiveEntity:
+        """追加边关联（等价 ``edit().add(edge, *peer_ids).save()``）。"""
+        if self._async:
+            raise RuntimeError(
+                "inside async_bind use: await entity.edit().add(edge, *ids).save()"
+            )
+        return ActiveEntity.from_entity(
+            self.edit().add(edge, *peer_ids).save()
+        )
+
+    def set_links(self, edge: str, *peer_ids: Any) -> ActiveEntity:
+        """M2M 边全量替换（等价 ``edit().set_edges(edge, *peer_ids).save()``）。"""
+        if self._async:
+            raise RuntimeError(
+                "inside async_bind use: await entity.edit().set_edges(edge, *ids).save()"
+            )
+        return ActiveEntity.from_entity(
+            self.edit().set_edges(edge, *peer_ids).save()
+        )
+
     def _pending_fields(self) -> dict[str, Any]:
         return {k: v for k, v in self._data.items() if not k.startswith("_") and k != "id"}

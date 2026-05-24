@@ -2,7 +2,7 @@
 
 Python 实体框架：用 Schema 类描述数据模型，运行时直接 CRUD / 查询 / 检索，**无需代码生成**。支持 SQL（SQLAlchemy 2.x）与 Gremlin 图存储，可选 BM25 + 向量混合检索。
 
-架构与端到端执行流程详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+架构与端到端执行流程详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。**业务快速上手**见 [docs/QUICKSTART.md](docs/QUICKSTART.md)。
 
 ## 包结构
 
@@ -111,7 +111,8 @@ users = client.query(User).where(F(User).name.eq("Alice")).all()
 | 单条 | `User.get(id=uuid)` | `.only()` |
 | 检索 | `search(Document).bm25_sync(...)` | `client.search(Document)...` |
 | 边遍历 | `e.out("knows").out("knows").all()` | `client.traverse(e, "knows").all()` |
-| 更新边 | `update(Person, id).add("knows", peer_id).save()` | 同左 |
+| 追加边 | `e.link("groups", gid)` 或 `e.edit().add("groups", gid).save()` | `client.update(P, id).add(...).save()` |
+| M2M 替换边 | `e.set_links("groups", g1, g2)` 或 `e.edit().set_edges("groups", g1).save()` | `client.update(...).set_edges(...).save()` |
 
 ### Observer（自动注册，Schema 零依赖）
 

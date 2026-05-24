@@ -12,7 +12,7 @@ entpy 是 **运行时优先（runtime-first）** 的实体框架：
 - 通过 **`Client` / `AsyncClient`** 或 **`bind` / `async_bind`** 执行 CRUD、图遍历与全文 / 向量检索。
 - **不生成 ORM 代码**；Schema 类即唯一数据源。
 
-推荐业务入口为 **`entpy.active`**：`User.create()`、`User.query()`、`entity.out("knows").all()` 等，底层统一委托给 `Client` 与方言层。
+推荐业务入口为 **`entpy.active`**：`User.create()`、`User.query()`、`entity.out("knows").all()` 等，底层统一委托给 `Client` 与方言层。新手上手见 [QUICKSTART.md](QUICKSTART.md)。
 
 ---
 

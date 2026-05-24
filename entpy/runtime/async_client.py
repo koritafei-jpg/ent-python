@@ -137,7 +137,7 @@ class AsyncClient:
     def query(self, schema: type[Schema]) -> AsyncQueryBuilder:
         return AsyncQueryBuilder(self, schema)
 
-    def update(self, schema: type[Schema], id: int) -> AsyncUpdateBuilder:
+    def update(self, schema: type[Schema], id: Any) -> AsyncUpdateBuilder:
         return AsyncUpdateBuilder(self, schema, id)
 
     def delete(self, schema: type[Schema]) -> AsyncDeleteBuilder:
@@ -172,7 +172,7 @@ class _AsyncNodeClient:
     def query(self) -> AsyncQueryBuilder:
         return self._client.query(self._schema)
 
-    def update(self, id: int) -> AsyncUpdateBuilder:
+    def update(self, id: Any) -> AsyncUpdateBuilder:
         return self._client.update(self._schema, id)
 
     def delete(self) -> AsyncDeleteBuilder:

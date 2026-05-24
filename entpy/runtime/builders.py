@@ -218,7 +218,7 @@ class QueryBuilder:
 
 
 class UpdateBuilder:
-    def __init__(self, client: Any, schema: type[Schema], id: int) -> None:
+    def __init__(self, client: Any, schema: type[Schema], id: Any) -> None:
         if issubclass(schema, View):
             raise TypeError(f"{schema.type_name()} is a View")
         self._client = client
@@ -234,7 +234,7 @@ class UpdateBuilder:
         self._fields[name] = isolate_field_value(self._schema, name, value)
         return self
 
-    def add(self, edge: str, *ids: int) -> UpdateBuilder:
+    def add(self, edge: str, *ids: Any) -> UpdateBuilder:
         """追加关联（M2M 幂等插入；O2M/O2O 按方言语义追加）。"""
         _require_edge(self._client._registry, self._schema, edge)
         self._edges.setdefault(edge, []).extend(ids)
@@ -329,7 +329,7 @@ class DeleteBuilder:
         self._predicates.extend(preds)
         return self
 
-    def one(self, id: int) -> DeleteBuilder:
+    def one(self, id: Any) -> DeleteBuilder:
         self._ids = [id]
         return self
 

@@ -151,7 +151,7 @@ class Client:
     def query(self, schema: type[Schema]) -> QueryBuilder:
         return QueryBuilder(self, schema)
 
-    def update(self, schema: type[Schema], id: int) -> UpdateBuilder:
+    def update(self, schema: type[Schema], id: Any) -> UpdateBuilder:
         return UpdateBuilder(self, schema, id)
 
     def delete(self, schema: type[Schema]) -> DeleteBuilder:
@@ -198,7 +198,7 @@ class NodeClient:
     def query(self) -> QueryBuilder:
         return self._client.query(self._schema)
 
-    def update(self, id: int) -> UpdateBuilder:
+    def update(self, id: Any) -> UpdateBuilder:
         return self._client.update(self._schema, id)
 
     def delete(self) -> DeleteBuilder:

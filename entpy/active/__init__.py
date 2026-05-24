@@ -1,5 +1,9 @@
 """Active Record API：通过 bind() 上下文绑定数据库连接。"""
 
+from __future__ import annotations
+
+from typing import Any
+
 from entpy.active.bind import (
     async_bind,
     async_bind_client,
@@ -46,8 +50,8 @@ def traverse(entity, edge: str | None = None):
     return get_bound_client().traverse(entity, edge)
 
 
-def update(schema: type[Schema], id: int):
-    """更新已有行（例如关联边）。"""
+def update(schema: type[Schema], id: Any):
+    """更新已有行（字段 ``set`` / 边 ``add`` / M2M ``set_edges``）。推荐 ``entity.edit()``。"""
     reject_async_module_api("update")
     return get_bound_client().update(schema, id)
 

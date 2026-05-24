@@ -235,7 +235,7 @@ class AsyncDeleteBuilder:
         self._predicates.extend(preds)
         return self
 
-    def one(self, id: int) -> AsyncDeleteBuilder:
+    def one(self, id: Any) -> AsyncDeleteBuilder:
         self._ids = [id]
         return self
 

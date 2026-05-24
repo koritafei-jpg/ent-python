@@ -51,5 +51,8 @@ class ActiveQuerySet:
 
 
 def _kw_to_predicate(client: Any, schema: type[Schema], key: str, value: Any) -> Predicate:
-    field_ref = getattr(client.F(schema), key)
+    try:
+        field_ref = getattr(client.F(schema), key)
+    except AttributeError as exc:
+        raise ValueError(str(exc)) from exc
     return field_ref.eq(value)

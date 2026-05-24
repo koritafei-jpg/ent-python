@@ -116,6 +116,61 @@ def test_traverse_out_reflects_edges_after_update():
         assert len(u.out("groups").all()) == 1
 
 
+def test_entity_strips_edges_from_data():
+    from entpy.runtime.entity import Entity
+
+    e = Entity(User, {"id": "x", "name": "a", "_edges": {"groups": []}})
+    assert "_edges" not in e._data
+    assert e._edges == {"groups": []}
+
+
+def test_bind_client_hooks_do_not_accumulate():
+    from entpy.active import bind_client
+    from entpy.runtime.client import Client
+    from entpy.runtime.hook import hook
+
+    calls: list[int] = []
+
+    @hook
+    def inc(next_m, m):
+        calls.append(1)
+        return next_m.mutate(m)
+
+    client = Client.open("sqlite:///:memory:", schemas=SCHEMAS)
+    client.migrate()
+    base_len = len(client._hooks)
+    with bind_client(client, hooks=[inc]):
+        client.create(User, name="a", age=1).save()
+    with bind_client(client, hooks=[inc]):
+        client.create(User, name="b", age=2).save()
+    assert len(client._hooks) == base_len
+    assert len(calls) == 2
+
+
+def test_env_bind_without_dsn_raises(monkeypatch):
+    monkeypatch.delenv("ENTPY_DSN", raising=False)
+    monkeypatch.delenv("ENTPY_STORAGE", raising=False)
+    monkeypatch.delenv("ENTPY_ASYNC", raising=False)
+    with pytest.raises(RuntimeError, match="ENTPY_DSN"):
+        with bind(schemas=SCHEMAS, source="env"):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_async_bind_rejects_sync_client():
+    from entpy.active import async_bind
+    from entpy.runtime.client import Client
+
+    sync = Client.open("sqlite:///:memory:", schemas=SCHEMAS)
+    try:
+        async with async_bind(client=sync, schemas=SCHEMAS):
+            pass
+    except TypeError as e:
+        assert "AsyncClient" in str(e)
+    finally:
+        sync.close()
+
+
 @pytest.mark.asyncio
 async def test_async_query_with_interceptor():
     import asyncio

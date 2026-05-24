@@ -83,9 +83,19 @@ def config_from_env(prefix: str = "ENTPY_") -> dict[str, Any]:
     return out
 
 
-def _merge_runtime_hooks(client: Any, request: ConnectRequest) -> None:
-    if request.runtime_hooks:
-        client._hooks = list(request.runtime_hooks) + list(client._hooks)
+def _validate_client_kind(client: Any, *, async_: bool) -> None:
+    from entpy.runtime.async_client import AsyncClient
+    from entpy.runtime.client import Client
+
+    if async_:
+        if not isinstance(client, AsyncClient):
+            raise TypeError(
+                f"async_bind requires AsyncClient, got {type(client).__name__}"
+            )
+    elif isinstance(client, AsyncClient):
+        raise TypeError("bind requires sync Client, got AsyncClient")
+    elif not isinstance(client, Client):
+        raise TypeError(f"expected Client, got {type(client).__name__}")
 
 
 def _build_sync_client(request: ConnectRequest) -> Any:
@@ -93,7 +103,7 @@ def _build_sync_client(request: ConnectRequest) -> Any:
 
     if request.dsn is None:
         raise ValueError("sync connection requires dsn")
-    client = Client.open(
+    return Client.open(
         request.dsn,
         schemas=request.schemas,
         storage=request.storage,
@@ -101,8 +111,6 @@ def _build_sync_client(request: ConnectRequest) -> Any:
         ctx=request.ctx,
         **request.engine_kw,
     )
-    _merge_runtime_hooks(client, request)
-    return client
 
 
 def _build_async_client(request: ConnectRequest) -> Any:
@@ -110,7 +118,7 @@ def _build_async_client(request: ConnectRequest) -> Any:
 
     if request.dsn is None:
         raise ValueError("async connection requires dsn")
-    client = AsyncClient.open(
+    return AsyncClient.open(
         request.dsn,
         schemas=request.schemas,
         storage=request.storage,
@@ -118,8 +126,6 @@ def _build_async_client(request: ConnectRequest) -> Any:
         ctx=request.ctx,
         **request.engine_kw,
     )
-    _merge_runtime_hooks(client, request)
-    return client
 
 
 def _open_from_dsn(request: ConnectRequest) -> Any:
@@ -136,7 +142,7 @@ class ExistingClientHook:
 
     def open(self, request: ConnectRequest) -> Any:
         client = request.client
-        _merge_runtime_hooks(client, request)
+        _validate_client_kind(client, async_=request.async_)
         return client
 
 
@@ -185,10 +191,15 @@ class EnvConnectionHook:
 
     def open(self, request: ConnectRequest) -> Any:
         cfg = config_from_env(request.env_prefix)
+        dsn = cfg.get("dsn")
+        if not dsn:
+            raise RuntimeError(
+                f"environment variable {request.env_prefix}DSN is not set"
+            )
         nested = ConnectRequest(
             schemas=request.schemas,
             async_=bool(cfg.get("async", request.async_)),
-            dsn=cfg["dsn"],
+            dsn=dsn,
             storage=str(cfg.get("storage", request.storage)),
             observer_packages=request.observer_packages,
             runtime_hooks=request.runtime_hooks,

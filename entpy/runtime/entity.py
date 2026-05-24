@@ -17,7 +17,7 @@ class Entity:
         self._schema = schema
         self._data = dict(data)
         self._client = client
-        edges = data.get("_edges")
+        edges = self._data.pop("_edges", None)
         if edges:
             self._edges = edges
         else:

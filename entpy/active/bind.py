@@ -110,10 +110,16 @@ def bind(
         engine_kw=engine_kw,
     )
     resolved = resolve_connection(request, extra_hooks=connection_hooks)
-    with resolved.scope():
-        yield resolved
-    if lifecycle == "request" and request.owns_connection:
-        resolved.close()
+    prev_hooks = list(resolved._hooks)
+    if hooks:
+        resolved._hooks = list(hooks) + prev_hooks
+    try:
+        with resolved.scope():
+            yield resolved
+    finally:
+        resolved._hooks = prev_hooks
+        if lifecycle == "request" and request.owns_connection:
+            resolved.close()
 
 
 @contextmanager
@@ -129,12 +135,16 @@ def bind_client(
 
     默认 ``lifecycle="app"`` 且不在退出时 ``close()``；测试可设 ``close_on_exit=True``。
     """
+    prev_hooks = list(client._hooks)
     if hooks:
-        client._hooks = list(hooks) + list(client._hooks)
-    with client.scope(ctx=ctx):
-        yield client
-    if lifecycle == "request" or close_on_exit:
-        client.close()
+        client._hooks = list(hooks) + prev_hooks
+    try:
+        with client.scope(ctx=ctx):
+            yield client
+    finally:
+        client._hooks = prev_hooks
+        if lifecycle == "request" or close_on_exit:
+            client.close()
 
 
 @asynccontextmanager
@@ -173,10 +183,16 @@ async def async_bind(
         engine_kw=engine_kw,
     )
     resolved = resolve_connection(request, extra_hooks=connection_hooks)
-    async with resolved.ascope():
-        yield resolved
-    if lifecycle == "request" and request.owns_connection:
-        await resolved.aclose()
+    prev_hooks = list(resolved._hooks)
+    if hooks:
+        resolved._hooks = list(hooks) + prev_hooks
+    try:
+        async with resolved.ascope():
+            yield resolved
+    finally:
+        resolved._hooks = prev_hooks
+        if lifecycle == "request" and request.owns_connection:
+            await resolved.aclose()
 
 
 @asynccontextmanager
@@ -189,12 +205,16 @@ async def async_bind_client(
     close_on_exit: bool = False,
 ) -> AsyncIterator[AsyncClient]:
     """绑定已有 ``AsyncClient``。"""
+    prev_hooks = list(client._hooks)
     if hooks:
-        client._hooks = list(hooks) + list(client._hooks)
-    async with client.ascope(ctx=ctx):
-        yield client
-    if lifecycle == "request" or close_on_exit:
-        await client.aclose()
+        client._hooks = list(hooks) + prev_hooks
+    try:
+        async with client.ascope(ctx=ctx):
+            yield client
+    finally:
+        client._hooks = prev_hooks
+        if lifecycle == "request" or close_on_exit:
+            await client.aclose()
 
 
 def migrate() -> None:

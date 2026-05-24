@@ -60,16 +60,37 @@ async def test_async_interceptor_chain_native():
         assert len(seen) == 1
 
 
+def test_traverse_where_filters_slow_path():
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        u1 = User.create(name="match", age=1)
+        u2 = User.create(name="skip", age=2)
+        from examples.start.models import Group
+
+        g1 = Group.create(name="alpha")
+        g2 = Group.create(name="beta")
+        client = get_client()
+        client.update(User, u1.id).add("groups", g1.id).save()
+        client.update(User, u2.id).add("groups", g2.id).save()
+        rows = (
+            u1.out("groups")
+            .where(client.F(Group).name.eq("alpha"))
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].name == "alpha"
+
+
 def test_traverse_exec_fast_path_sql_multihop():
     with bind("sqlite:///:memory:", schemas=SCHEMAS):
         migrate()
         u = User.create(name="U", age=1)
         from examples.start.models import Group
 
-        g = Group.create(name="g")
+        g = Group.create(name="gamma")
         get_client().update(User, u.id).add("groups", g.id).save()
         names = {x.name for x in u.out("groups").all()}
-        assert names == {"g"}
+        assert names == {"gamma"}
 
 
 def test_o2o_edge_update_replaces_exclusive_peer():

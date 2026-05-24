@@ -272,30 +272,13 @@ class TraverseChain(_TraverseChainBase):
         chain._project_field = field
         return chain
 
-    def _filter_entities(
-        self, entities: list[Entity], peer_schema: type[Schema]
-    ) -> list[Entity]:
-        if not self._predicates or not entities:
-            return entities
-        ids = [e.id for e in entities]
-        qb = self._client.query(peer_schema).where(
-            self._client.F(peer_schema).id.in_(ids)
-        )
-        for pred in self._predicates:
-            qb = qb.where(pred)
-        if self._limit is not None:
-            qb = qb.limit(self._limit)
-        return qb.all()
-
     def all(self) -> list[Any]:
-        state = self._state()
         return run_all_sync(
-            state,
+            self._state(),
             hop_single=lambda: _hop_neighbors(
                 self._client, self._entity, self._hops[0]
             ),
             hop_batch=_hop_neighbors_batch,
-            filter_entities=self._filter_entities,
         )
 
     def only(self) -> Entity:
@@ -333,24 +316,7 @@ class AsyncTraverseChain(_TraverseChainBase):
         chain._project_field = field
         return chain
 
-    async def _filter_entities(
-        self, entities: list[Entity], peer_schema: type[Schema]
-    ) -> list[Entity]:
-        if not self._predicates or not entities:
-            return entities
-        ids = [e.id for e in entities]
-        qb = self._client.query(peer_schema).where(
-            self._client.F(peer_schema).id.in_(ids)
-        )
-        for pred in self._predicates:
-            qb = qb.where(pred)
-        if self._limit is not None:
-            qb = qb.limit(self._limit)
-        return await qb.all()
-
     async def all(self) -> list[Any]:
-        state = self._state()
-
         async def hop_single():
             return await _hop_neighbors_async(
                 self._client, self._entity, self._hops[0]
@@ -362,10 +328,9 @@ class AsyncTraverseChain(_TraverseChainBase):
             )
 
         return await run_all_async(
-            state,
+            self._state(),
             hop_single=hop_single,
             hop_batch=hop_batch,
-            filter_entities=self._filter_entities,
         )
 
     async def only(self) -> Entity:

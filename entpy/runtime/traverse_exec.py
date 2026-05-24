@@ -189,105 +189,82 @@ async def try_sql_fast_path_async(state: TraverseState) -> list[Any] | None:
         return None
 
 
-def _finish_after_fast(
+def filter_entities_sync(
     state: TraverseState,
-    fast: list[Any],
-    filter_entities: Callable[[list[Entity], type[Schema]], list[Entity]],
-) -> list[Any]:
-    if state.project_field:
-        return fast
-    return tc.finish_entities(
-        fast,
-        state.peer_schema(),
-        client=state.client,
-        predicates=state.predicates,
-        limit=state.limit,
-        project_field=state.project_field,
-        filter_entities=filter_entities,
+    entities: list[Entity],
+    peer_schema: type[Schema],
+) -> list[Entity]:
+    """慢路径 / 快路径后：按谓词二次过滤邻居。"""
+    if not state.predicates or not entities:
+        return entities
+    ids = [e.id for e in entities]
+    qb = state.client.query(peer_schema).where(
+        state.client.F(peer_schema).id.in_(ids)
     )
+    for pred in state.predicates:
+        qb = qb.where(pred)
+    if state.limit is not None:
+        qb = qb.limit(state.limit)
+    return qb.all()
 
 
-async def _finish_after_fast_async(
+async def filter_entities_async(
     state: TraverseState,
-    fast: list[Entity],
-    filter_entities: Callable[
-        [list[Entity], type[Schema]], Awaitable[list[Entity]]
-    ],
-) -> list[Any]:
-    if state.project_field:
-        return fast
-    filtered = await filter_entities(fast, state.peer_schema())
+    entities: list[Entity],
+    peer_schema: type[Schema],
+) -> list[Entity]:
+    if not state.predicates or not entities:
+        return entities
+    ids = [e.id for e in entities]
+    qb = state.client.query(peer_schema).where(
+        state.client.F(peer_schema).id.in_(ids)
+    )
+    for pred in state.predicates:
+        qb = qb.where(pred)
+    if state.limit is not None:
+        qb = qb.limit(state.limit)
+    return await qb.all()
+
+
+def _finalize_result(state: TraverseState, entities: list[Entity]) -> list[Any]:
     if state.limit is not None and not state.predicates:
-        filtered = filtered[: state.limit]
+        entities = entities[: state.limit]
     if state.project_field:
         field = state.project_field
-        return [e._data.get(field) for e in filtered]
-    return filtered
+        return [e._data.get(field) for e in entities]
+    return entities
 
 
-def run_all_sync(
+def finish_sync(
     state: TraverseState,
-    *,
-    hop_single: Callable[[], list[Entity]],
-    hop_batch: Callable[[list[Entity], str], list[Entity]],
-    filter_entities: Callable[[list[Entity], type[Schema]], list[Entity]],
+    entities: list[Entity],
+    peer_schema: type[Schema],
 ) -> list[Any]:
-    fast = try_gremlin_fast_path_sync(state)
-    if fast is not None:
-        return fast
-    fast = try_sql_fast_path_sync(state)
-    if fast is not None:
-        return _finish_after_fast(state, fast, filter_entities)
-
-    resolved = state.resolved_hops()
-    peer_schema = resolved[-1].peer.schema_type
-    if len(state.hops) == 1:
-        return tc.finish_entities(
-            hop_single(),
-            peer_schema,
-            client=state.client,
-            predicates=state.predicates,
-            limit=state.limit,
-            project_field=state.project_field,
-            filter_entities=filter_entities,
-        )
-    current = tc.walk_multi_hop(state.entity, state.hops, hop_batch, state.client)
-    return tc.finish_entities(
-        current,
-        peer_schema,
-        client=state.client,
-        predicates=state.predicates,
-        limit=state.limit,
-        project_field=state.project_field,
-        filter_entities=filter_entities,
-    )
+    filtered = filter_entities_sync(state, entities, peer_schema)
+    return _finalize_result(state, filtered)
 
 
-async def run_all_async(
+async def finish_async(
     state: TraverseState,
-    *,
-    hop_single: Callable[[], Awaitable[list[Entity]]],
+    entities: list[Entity],
+    peer_schema: type[Schema],
+) -> list[Any]:
+    filtered = await filter_entities_async(state, entities, peer_schema)
+    return _finalize_result(state, filtered)
+
+
+def walk_multi_hop_slow_sync(
+    state: TraverseState,
+    hop_batch: Callable[[Any, list[Entity], str], list[Entity]],
+) -> list[Entity]:
+    """多跳慢路径（逐 hop 批量邻居）。"""
+    return tc.walk_multi_hop(state.entity, state.hops, hop_batch, state.client)
+
+
+async def walk_multi_hop_slow_async(
+    state: TraverseState,
     hop_batch: Callable[[list[Entity], str], Awaitable[list[Entity]]],
-    filter_entities: Callable[[list[Entity], type[Schema]], Awaitable[list[Entity]]],
-) -> list[Any]:
-    fast = await try_gremlin_fast_path_async(state)
-    if fast is not None:
-        return fast
-    fast = await try_sql_fast_path_async(state)
-    if fast is not None:
-        return await _finish_after_fast_async(state, fast, filter_entities)
-
-    resolved = state.resolved_hops()
-    peer_schema = resolved[-1].peer.schema_type
-    if len(state.hops) == 1:
-        entities = await hop_single()
-        filtered = await filter_entities(entities, peer_schema)
-        if state.limit is not None and not state.predicates:
-            filtered = filtered[: state.limit]
-        if state.project_field:
-            return [e._data.get(state.project_field) for e in filtered]
-        return filtered
-
+) -> list[Entity]:
     current: list[Entity] = [state.entity]
     for edge_name in state.hops:
         next_entities: list[Entity] = []
@@ -298,10 +275,56 @@ async def run_all_async(
             seen.add(neighbor.id)
             next_entities.append(neighbor)
         current = next_entities
+    return current
 
-    filtered = await filter_entities(current, peer_schema)
-    if state.limit is not None and not state.predicates:
-        filtered = filtered[: state.limit]
+
+def _finish_fast_path(state: TraverseState, fast: list[Any]) -> list[Any]:
     if state.project_field:
-        return [e._data.get(state.project_field) for e in filtered]
-    return filtered
+        return fast
+    return finish_sync(state, fast, state.peer_schema())
+
+
+async def _finish_fast_path_async(state: TraverseState, fast: list[Any]) -> list[Any]:
+    if state.project_field:
+        return fast
+    return await finish_async(state, fast, state.peer_schema())
+
+
+def run_all_sync(
+    state: TraverseState,
+    *,
+    hop_single: Callable[[], list[Entity]],
+    hop_batch: Callable[[Any, list[Entity], str], list[Entity]],
+) -> list[Any]:
+    fast = try_gremlin_fast_path_sync(state)
+    if fast is not None:
+        return fast
+    fast = try_sql_fast_path_sync(state)
+    if fast is not None:
+        return _finish_fast_path(state, fast)
+
+    peer_schema = state.peer_schema()
+    if len(state.hops) == 1:
+        return finish_sync(state, hop_single(), peer_schema)
+    current = walk_multi_hop_slow_sync(state, hop_batch)
+    return finish_sync(state, current, peer_schema)
+
+
+async def run_all_async(
+    state: TraverseState,
+    *,
+    hop_single: Callable[[], Awaitable[list[Entity]]],
+    hop_batch: Callable[[list[Entity], str], Awaitable[list[Entity]]],
+) -> list[Any]:
+    fast = await try_gremlin_fast_path_async(state)
+    if fast is not None:
+        return fast
+    fast = await try_sql_fast_path_async(state)
+    if fast is not None:
+        return await _finish_fast_path_async(state, fast)
+
+    peer_schema = state.peer_schema()
+    if len(state.hops) == 1:
+        return await finish_async(state, await hop_single(), peer_schema)
+    current = await walk_multi_hop_slow_async(state, hop_batch)
+    return await finish_async(state, current, peer_schema)

@@ -15,13 +15,13 @@ def test_traverse_chain_two_hops_sqlite():
     client.update(Person, alice.id).add("knows", bob.id).save()
     client.update(Person, bob.id).add("knows", carol.id).save()
 
-    friends = client.traverse(alice).out("knows").values("name").all()
+    friends = alice.out("knows").values("name").all()
     assert friends == ["Bob"]
 
-    fof = client.traverse(alice).out("knows").out("knows").all()
+    fof = alice.out("knows").out("knows").all()
     assert len(fof) == 1
     assert fof[0].name == "Carol"
 
-    # 兼容 traverse(entity, edge) 单跳写法
+    # 兼容 traverse(entity, edge) 写法
     one = client.traverse(alice, "knows").all()
     assert [p.name for p in one] == ["Bob"]

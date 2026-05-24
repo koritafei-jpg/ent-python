@@ -19,7 +19,7 @@ def search(schema: type[Schema]):
 
 
 def traverse(entity, edge: str | None = None):
-    """从 ActiveEntity 出发的边遍历；多跳使用 ``.out('edge').out('edge').all()``。"""
+    """边遍历（兼容写法）；推荐 ``entity.out('edge').out('edge').all()``。"""
     return get_client().traverse(entity, edge)
 
 

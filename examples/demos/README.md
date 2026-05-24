@@ -74,7 +74,7 @@ with bind("sqlite:///:memory:", schemas=SCHEMAS):
     rows = User.query().where(F(User).age.gt(18)).all()  # 复杂条件
     sb = search(Document)                          # 检索
     hits = sb.bm25_sync("query", top_k=5)
-    friends = traverse(user).out("knows").all()    # 边 / 多跳
+    friends = user.out("knows").all()              # 边 / 多跳
 ```
 
 实体需继承 **`BaseSchema`**（通用字段）+ **`ActiveSchema`**（`bind` 上下文 API）：
@@ -107,7 +107,7 @@ class User(ActiveSchema, BaseSchema):
 
 ### 边遍历 vs FK 子表
 
-- **边 + `traverse()`**：Gremlin 演示中 `Person.knows` 为图边；SQL 场景下 User/Car 等用 `with_()` / `traverse()`。
+- **边 + `.out()`**：Gremlin 演示中 `Person.knows` 为图边，多跳如 `alice.out("knows").out("knows").all()`；SQL 场景下 User/Car 等亦可用 `with_()` / `entity.out()`。
 - **显式 FK 子表**：relational 的 `Comment.article_id`、search 的 `Section.document_id`，便于演示子表条件查询。
 
 ---
@@ -251,11 +251,11 @@ with bind("ws://localhost:8182/gremlin", schemas=GREMLIN_SCHEMAS, storage="greml
     Person.query(city="NYC").all()
 
     alice = Person.get(name="Alice")
-    traverse(alice, "knows").all()                              # 单跳
-    traverse(alice).out("knows").values("name").all()             # 多跳 + 投影
-    traverse(alice).out("knows").out("knows").values("name").all()  # 两跳
+    alice.out("knows").all()                                    # 单跳
+    alice.out("knows").values("name").all()                     # 多跳 + 投影
+    alice.out("knows").out("knows").values("name").all()        # 两跳
 
-    friend_ids = traverse(alice).out("knows").ids()
+    friend_ids = alice.out("knows").ids()
     Post.query().where(F(Post).author_id.in_(friend_ids)).all()
 ```
 

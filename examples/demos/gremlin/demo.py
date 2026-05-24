@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import sys
 
-from entpy.active import bind, F, traverse, clear_graph, ensure_connection
+from entpy.active import bind, F, clear_graph, ensure_connection
 from examples.demos.gremlin.models import Comment, Person, Post, GREMLIN_SCHEMAS
 from examples.demos.gremlin.seed import seed
 from examples.demos.common.print_observers import print_observer_events
@@ -23,7 +23,7 @@ def run_demo() -> None:
 
     print("\n=== 2. 一跳边 knows ===")
     alice = Person.get(name="Alice")
-    friends = traverse(alice, "knows").all()
+    friends = alice.out("knows").all()
     print(f"  Alice knows: {[f.name for f in friends]}")
 
     print("\n=== 3. 子表 — Post by author_id ===")
@@ -35,22 +35,22 @@ def run_demo() -> None:
         print(f"  Comment [{c.id}] {c.text}")
 
     print("\n=== 5. 多跳: Alice -knows-> friends ===")
-    names = traverse(alice).out("knows").values("name").all()
+    names = alice.out("knows").values("name").all()
     print(f"  direct friends: {names}")
 
     print("\n=== 6. 两跳 knows (friends-of-friends) ===")
-    fof = traverse(alice).out("knows").out("knows").values("name").all()
+    fof = alice.out("knows").out("knows").values("name").all()
     print(f"  friends-of-friends: {fof}")
 
     print("\n=== 7. 复合多跳: knows + 查好友的文章 ===")
-    friend_ids = traverse(alice).out("knows").ids()
+    friend_ids = alice.out("knows").ids()
     if friend_ids:
         posts = Post.query().where(F(Post).author_id.in_(friend_ids)).all()
         print(f"  posts by Alice's friends: {[p.title for p in posts]}")
 
     print("\n=== 8. 三跳组合: knows + post/comment 子表 ===")
     for person in Person.query(city="NYC").all():
-        for fr in traverse(person).out("knows").all():
+        for fr in person.out("knows").all():
             for post in Post.query(author_id=fr.id).all():
                 n = len(Comment.query(post_id=post.id).all())
                 print(

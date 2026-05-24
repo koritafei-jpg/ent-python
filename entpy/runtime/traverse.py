@@ -54,7 +54,7 @@ def _hop_neighbors(client: Any, entity: Entity, edge_name: str) -> list[Entity]:
 
 
 class TraverseChain:
-    """边遍历链：``traverse(alice).out('knows').out('knows').all()``。"""
+    """边遍历链：``alice.out('knows').out('knows').all()``（亦可用 ``traverse(alice).out(...)``）。"""
 
     def __init__(
         self,

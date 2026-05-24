@@ -381,6 +381,36 @@ def test_migrate_rejects_async_bind_only():
     asyncio.run(run())
 
 
+def test_add_unknown_edge_raises_at_call_time():
+    import uuid
+
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        u = User.create(name="U", age=1)
+        client = get_client()
+        with pytest.raises(ValueError, match="unknown edge"):
+            client.update(User, u.id).add("nosuch", uuid.uuid4())
+        with pytest.raises(ValueError, match="unknown edge"):
+            client.create(User, name="x", age=1).add("nosuch", uuid.uuid4())
+
+
+def test_entql_unknown_field_raises_value_error():
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        client = get_client()
+        with pytest.raises(ValueError, match="unknown field"):
+            client.query(User).entql({"nosuch": 1}).all()
+
+
+def test_entql_filter_must_be_dict():
+    from entpy.entql.filter import entql_to_predicates
+
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        with pytest.raises(ValueError, match="must be a dict"):
+            entql_to_predicates(get_client().F(User), [])  # type: ignore[arg-type]
+
+
 def test_entql_empty_or_matches_nothing():
     with bind("sqlite:///:memory:", schemas=SCHEMAS):
         migrate()

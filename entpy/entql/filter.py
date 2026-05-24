@@ -32,6 +32,10 @@ def entql_to_predicates(
       {"age": {"gt": 10}}
       {"and": [...]} / {"or": [...]}
     """
+    if not isinstance(filter_obj, dict):
+        raise ValueError(
+            f"entql filter must be a dict, got {type(filter_obj).__name__}"
+        )
     preds: list[Predicate] = []
     for key, value in filter_obj.items():
         if key == "and":
@@ -69,7 +73,10 @@ def entql_to_predicates(
 
             preds.append(Predicate(combined, combined_gremlin))
             continue
-        ref = getattr(F, key)
+        try:
+            ref = getattr(F, key)
+        except AttributeError as exc:
+            raise ValueError(str(exc)) from exc
         if isinstance(value, dict):
             for op, v in value.items():
                 preds.append(_op(ref, op, v))

@@ -24,7 +24,7 @@ from entpy.runtime.query_helpers import (
     eval_and_fetch_entities,
     make_limited_request,
 )
-from entpy.runtime.spec_helpers import create_spec, update_spec
+from entpy.runtime.spec_helpers import _require_edge, create_spec, update_spec
 from entpy.runtime.validation import (
     collect_update_fields_after_hooks,
     isolate_field_value,
@@ -87,6 +87,7 @@ class CreateBuilder:
         return self
 
     def add(self, edge: str, *ids: Any) -> CreateBuilder:
+        _require_edge(self._client._registry, self._schema, edge)
         self._edges.setdefault(edge, []).extend(ids)
         return self
 
@@ -235,6 +236,7 @@ class UpdateBuilder:
 
     def add(self, edge: str, *ids: int) -> UpdateBuilder:
         """追加关联（M2M 幂等插入；O2M/O2O 按方言语义追加）。"""
+        _require_edge(self._client._registry, self._schema, edge)
         self._edges.setdefault(edge, []).extend(ids)
         return self
 

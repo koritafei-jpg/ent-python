@@ -6,13 +6,13 @@ import re
 from datetime import datetime, timezone
 
 from entpy.active import ActiveSchema
-from entpy.schema import Schema, edge, field
+from entpy.schema import BaseSchema, edge, field
 from entpy.schema import from_, to
 
 _NAME_RE = re.compile(r"[a-zA-Z_]+$")
 
 
-class User(ActiveSchema, Schema):
+class User(ActiveSchema, BaseSchema):
     @classmethod
     def fields(cls):
         return [
@@ -28,7 +28,7 @@ class User(ActiveSchema, Schema):
         ]
 
 
-class Car(ActiveSchema, Schema):
+class Car(ActiveSchema, BaseSchema):
     @classmethod
     def fields(cls):
         return [
@@ -45,7 +45,7 @@ class Car(ActiveSchema, Schema):
         ]
 
 
-class Group(ActiveSchema, Schema):
+class Group(ActiveSchema, BaseSchema):
     @classmethod
     def fields(cls):
         return [

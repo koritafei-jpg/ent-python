@@ -11,6 +11,8 @@
 
 PostgreSQL + pgvector 时走索引；SQLite 使用内存 brute-force 余弦相似度。
 
+实体继承 `BaseSchema`：`id`（UUID）、`create_time`、`delete_time`；子表 `Section.document_id` 为 UUID 外键。
+
 ## 运行
 
 ```bash

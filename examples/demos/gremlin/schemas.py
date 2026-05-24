@@ -1,13 +1,13 @@
-"""社交图 — Person knows 边 + Post/Comment FK。"""
+"""社交图 — BaseSchema + Person knows 边 + Post/Comment UUID FK。"""
 
 from __future__ import annotations
 
 from entpy.active import ActiveSchema
-from entpy.schema import Schema, edge, field
+from entpy.schema import BaseSchema, edge, field
 from entpy.schema import to
 
 
-class Person(ActiveSchema, Schema):
+class Person(ActiveSchema, BaseSchema):
     @classmethod
     def fields(cls):
         return [
@@ -20,22 +20,22 @@ class Person(ActiveSchema, Schema):
         return [to("knows", Person)]
 
 
-class Post(ActiveSchema, Schema):
+class Post(ActiveSchema, BaseSchema):
     @classmethod
     def fields(cls):
         return [
             field.string("title"),
             field.string("topic"),
-            field.int_("author_id"),
+            field.uuid("author_id"),
         ]
 
 
-class Comment(ActiveSchema, Schema):
+class Comment(ActiveSchema, BaseSchema):
     @classmethod
     def fields(cls):
         return [
             field.string("text"),
-            field.int_("post_id"),
+            field.uuid("post_id"),
         ]
 
 

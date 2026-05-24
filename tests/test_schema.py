@@ -7,6 +7,9 @@ def test_load_start_schemas():
     assert len(nodes) == 3
     user = next(n for n in nodes if n.name == "User")
     assert any(f.name == "age" for f in user.fields)
+    assert any(f.name == "id" for f in user.fields)
+    assert any(f.name == "create_time" for f in user.fields)
+    assert any(f.name == "delete_time" for f in user.fields)
 
 
 def test_graph_fk_user_cars():

@@ -128,6 +128,10 @@ def time(name: str) -> Field:
     return _field(name, FieldType.TIME)
 
 
+def uuid(name: str) -> Field:
+    return _field(name, FieldType.UUID)
+
+
 def json_(name: str) -> Field:
     return _field(name, FieldType.JSON)
 

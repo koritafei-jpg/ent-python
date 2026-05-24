@@ -9,7 +9,7 @@ def test_chunk_hybrid_search():
     client.migrate()
 
     emb = MockEmbedder(dim=8)
-    client.create(
+    doc1 = client.create(
         Chunk,
         path="/doc1",
         nchunk=0,
@@ -30,4 +30,4 @@ def test_chunk_hybrid_search():
         top_k=5,
     )
     assert len(hits) >= 1
-    assert hits[0].id == 1
+    assert hits[0].id == doc1.id

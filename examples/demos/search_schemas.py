@@ -1,13 +1,13 @@
-"""可检索 Document + Section（子表 FK）。"""
+"""可检索 Document + Section（BaseSchema + document_id UUID FK）。"""
 
 from __future__ import annotations
 
 from entpy.active import ActiveSchema
-from entpy.schema import Schema, SearchMixin, field
+from entpy.schema import BaseSchema, SearchMixin, field
 from entpy.schema.search import FullText, Hybrid, SearchConfig
 
 
-class Document(SearchMixin, ActiveSchema, Schema):
+class Document(SearchMixin, ActiveSchema, BaseSchema):
     @classmethod
     def fields(cls):
         return [
@@ -27,11 +27,11 @@ class Document(SearchMixin, ActiveSchema, Schema):
         )
 
 
-class Section(ActiveSchema, Schema):
+class Section(ActiveSchema, BaseSchema):
     @classmethod
     def fields(cls):
         return [
-            field.int_("document_id"),
+            field.uuid("document_id"),
             field.string("heading"),
             field.text("content"),
         ]

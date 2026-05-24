@@ -67,13 +67,28 @@ with bind("sqlite:///:memory:", schemas=SCHEMAS):
     friends = traverse(user).out("knows").all()    # 边 / 多跳
 ```
 
-Schema 需继承 `ActiveSchema`：`class User(ActiveSchema, Schema):`。
+实体需继承 **`BaseSchema`**（通用字段）+ **`ActiveSchema`**（`bind` 上下文 API）：
+
+```python
+class User(ActiveSchema, BaseSchema):
+    ...
+```
+
+`BaseSchema` 自动提供：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | UUID | 主键，`uuid4` 默认生成 |
+| `create_time` | time | UTC 创建时间，不可变 |
+| `delete_time` | time? | 软删除时间，可选 |
+
+外键字段（如 `author_id`、`document_id`）类型为 **UUID**，与主键一致。
 
 ### 共享模块
 
 | 模块 | 作用 |
 |------|------|
-| `search_schemas.py` | `Document`（可检索）+ `Section`（`document_id` FK 子表） |
+| `search_schemas.py` | `Document`（可检索）+ `Section`（`document_id` UUID FK 子表） |
 | `search_seed.py` | 写入示例文档与 8 维 mock 向量 |
 | `common/search_helpers.py` | `filter_hits(schema, hits, category=..., lang=...)` 对检索结果做 SQL 后过滤 |
 
@@ -103,7 +118,8 @@ with bind("sqlite:///:memory:", schemas=SCHEMAS):
 
     Article.query(status="published").all()
 
-    Article.query(status="published").where(F(Article).author_id.eq(1)).all()
+    ids = seed()
+    Article.query(status="published").where(F(Article).author_id.eq(ids["author_us"])).all()
 
     Article.query().entql({"status": "published"}).all()
 
@@ -203,9 +219,9 @@ with bind("sqlite:///:memory:", schemas=SEARCH_SCHEMAS):
 
 | 顶点标签 | 字段 | 关系 |
 |----------|------|------|
-| `persons` | name, city | `person_knows` → Person |
-| `posts` | title, topic, author_id | FK 指向 Person |
-| `comments` | text, post_id | FK 指向 Post |
+| `persons` | id (UUID), name, city, create_time, delete_time | `person_knows` → Person |
+| `posts` | title, topic, **author_id** (UUID) | FK 指向 Person |
+| `comments` | text, **post_id** (UUID) | FK 指向 Post |
 
 边标签规则：`{owner}_{edge_name}`，例如 `person_knows`。
 

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+from uuid import UUID
+
 from examples.demos.relational.schemas import Article, Author, Comment
 
 
-def seed() -> dict[str, int]:
+def seed() -> dict[str, UUID]:
     a_us = Author.create(name="Alice", region="US")
     a_eu = Author.create(name="Bob", region="EU")
 

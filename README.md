@@ -50,12 +50,13 @@ pytest -q
 ```python
 from entpy.active import bind, migrate, F
 from entpy.active import ActiveSchema
-from entpy.schema import Schema, field
+from entpy.schema import BaseSchema, field
 
-class User(ActiveSchema, Schema):
+class User(ActiveSchema, BaseSchema):
     @classmethod
     def fields(cls):
         return [field.string("name"), field.int_("age")]
+        # id (UUID)、create_time、delete_time 由 BaseSchema 提供
 
 SCHEMAS = [User]
 
@@ -86,7 +87,7 @@ users = client.query(User).where(F(User).name.eq("Alice")).all()
 | 建表 | `migrate()` | `client.migrate()` |
 | 插入 | `User.create(...)` | `client.create(User, ...).save()` |
 | 查询 | `User.query(...).where(F(User)...)` | `client.query(User).where(...)` |
-| 单条 | `User.get(id=1)` | `.only()` |
+| 单条 | `User.get(id=uuid)` | `.only()` |
 | 检索 | `search(Document).bm25_sync(...)` | `client.search(Document)...` |
 | 边遍历 | `traverse(e).out("knows").all()` | `client.traverse(e, "knows").all()` |
 | 更新边 | `update(Person, id).add("knows", peer_id).save()` | 同左 |
@@ -131,7 +132,7 @@ with bind("ws://localhost:8182/gremlin", schemas=SCHEMAS, storage="gremlin"):
 
 ## 能力演示（examples/demos）
 
-五类 demo 均在 `examples/demos/`，使用 `bind()` + ActiveSchema，可直接运行：
+五类 demo 均在 `examples/demos/`，使用 `bind()` + `ActiveSchema` + `BaseSchema`（UUID 主键与时间戳），可直接运行：
 
 | # | 命令 | 场景 |
 |---|------|------|

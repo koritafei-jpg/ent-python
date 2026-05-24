@@ -20,7 +20,7 @@ def test_semantic_sqlite_brute():
         data="cats and dogs",
         embedding=emb.embed_sync(["cats"])[0],
     ).save()
-    client.create(
+    db_chunk = client.create(
         Chunk,
         path="/b",
         nchunk=0,
@@ -28,7 +28,7 @@ def test_semantic_sqlite_brute():
         embedding=emb.embed_sync(["database sql"])[0],
     ).save()
     hits = client.search(Chunk).semantic_sync("database", embedder=emb, top_k=2)
-    assert hits[0].id == 2
+    assert hits[0].id == db_chunk.id
 
 
 @pytest.mark.integration

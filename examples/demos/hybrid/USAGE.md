@@ -17,6 +17,10 @@ cd python
 python -m examples.demos.hybrid.demo
 ```
 
+## 数据模型
+
+`Document` / `Section` 继承 `BaseSchema`（UUID 主键 + 时间戳）；`Section.document_id` 为 UUID 外键。详见 `search_schemas.py`。
+
 ## Schema 配置
 
 `Document.search_config()` 中声明：

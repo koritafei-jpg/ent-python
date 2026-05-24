@@ -1,12 +1,12 @@
-"""CRM 关系模型 — 显式 FK 字段（便于子表查询）。"""
+"""CRM 关系模型 — BaseSchema + UUID FK（author_id / article_id）。"""
 
 from __future__ import annotations
 
 from entpy.active import ActiveSchema
-from entpy.schema import Schema, field
+from entpy.schema import BaseSchema, field
 
 
-class Author(ActiveSchema, Schema):
+class Author(ActiveSchema, BaseSchema):
     @classmethod
     def fields(cls):
         return [
@@ -15,24 +15,24 @@ class Author(ActiveSchema, Schema):
         ]
 
 
-class Article(ActiveSchema, Schema):
+class Article(ActiveSchema, BaseSchema):
     @classmethod
     def fields(cls):
         return [
             field.string("title"),
             field.string("body"),
             field.string("status").default("draft"),
-            field.int_("author_id"),
+            field.uuid("author_id"),
         ]
 
 
-class Comment(ActiveSchema, Schema):
+class Comment(ActiveSchema, BaseSchema):
     @classmethod
     def fields(cls):
         return [
             field.string("body"),
             field.int_("rating").default(5),
-            field.int_("article_id"),
+            field.uuid("article_id"),
         ]
 
 

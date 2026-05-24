@@ -13,10 +13,10 @@
 
 ## 数据模型
 
-见 `examples/demos/search_schemas.py`：
+见 `examples/demos/search_schemas.py`（`ActiveSchema` + `BaseSchema`）：
 
-- `documents`：title, category, lang, **content**（可检索）, **embedding**
-- `sections`：document_id, heading, content（子表）
+- `documents`：id (UUID), create_time, title, category, lang, **content**（可检索）, **embedding**
+- `sections`：**document_id** (UUID FK), heading, content（子表）
 
 ## 运行
 

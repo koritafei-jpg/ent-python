@@ -42,7 +42,7 @@ def create_spec(registry: Registry, schema: type[Schema], fields: dict, edges: d
 
 
 def update_spec(
-    registry: Registry, schema: type[Schema], id: int, fields: dict, edges: dict
+    registry: Registry, schema: type[Schema], id: Any, fields: dict, edges: dict
 ) -> UpdateSpec:
     node = registry.node_for(schema)
     edge_specs = []

@@ -37,6 +37,7 @@ def main() -> None:
             doc = Document.get(id=h.id)
             n = len(Section.query(document_id=doc.id).all())
             print(f"  doc={doc.title} sections={n}")
+            print(f"    create_time={doc.create_time}")
 
 
 if __name__ == "__main__":

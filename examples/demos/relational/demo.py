@@ -12,7 +12,7 @@ def main() -> None:
     print("演示 1 — 关系数据库（SQL）")
     with bind("sqlite:///:memory:", schemas=SCHEMAS):
         migrate()
-        seed()
+        ids = seed()
 
         print("\n=== 1. 简单查询 ===")
         for a in Article.query(status="published").all():
@@ -21,10 +21,10 @@ def main() -> None:
         print("\n=== 2. 复杂查询 (多条件) ===")
         rows = (
             Article.query(status="published")
-            .where(F(Article).author_id.eq(1))
+            .where(F(Article).author_id.eq(ids["author_us"]))
             .all()
         )
-        print(f"  published by author 1: {len(rows)} row(s)")
+        print(f"  published by Alice (US): {len(rows)} row(s)")
 
         print("\n=== 3. EntQL ===")
         entql_rows = Article.query().entql({"status": "published"}).all()
@@ -52,6 +52,11 @@ def main() -> None:
                 .all()
             )
             print(f"  US published articles: {[a.title for a in us_articles]}")
+
+        print("\n=== 7. BaseSchema 时间戳 ===")
+        art = Article.get(title="entpy SQL guide")
+        print(f"  article id={art.id}")
+        print(f"  create_time={art.create_time} delete_time={art.delete_time}")
 
 
 if __name__ == "__main__":

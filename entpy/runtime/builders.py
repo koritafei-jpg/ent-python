@@ -37,7 +37,7 @@ class CreateBuilder:
         self._fields[name] = value
         return self
 
-    def add(self, edge: str, *ids: int) -> CreateBuilder:
+    def add(self, edge: str, *ids: Any) -> CreateBuilder:
         self._edges.setdefault(edge, []).extend(ids)
         return self
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from entpy.active import update
 from examples.demos.gremlin.schemas import Comment, Person, Post
 
 
-def seed() -> dict[str, int]:
+def seed() -> dict[str, UUID]:
     alice = Person.create(name="Alice", city="NYC")
     bob = Person.create(name="Bob", city="SF")
     carol = Person.create(name="Carol", city="NYC")

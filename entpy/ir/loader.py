@@ -21,30 +21,38 @@ def load_schemas(schemas: list[type[Schema]]) -> list[NodeDescriptor]:
     return nodes
 
 
-def _load_one(cls: type[Schema]) -> NodeDescriptor:
+def _collect_fields(cls: type[Schema]) -> list:
+    """沿 MRO 合并各层 Schema 子类的 fields（子类覆盖同名基类字段）。"""
     fields: list = []
+    seen: dict[str, int] = {}
+    for base in reversed(cls.__mro__):
+        if base is object or not issubclass(base, Schema) or base is Schema:
+            continue
+        for f in base.fields():
+            if not isinstance(f, Field):
+                continue
+            d = f.descriptor()
+            if d.name in seen:
+                fields[seen[d.name]] = d
+            else:
+                seen[d.name] = len(fields)
+                fields.append(d)
+    return fields
+
+
+def _load_one(cls: type[Schema]) -> NodeDescriptor:
     edges: list = []
     indexes: list = []
 
     for mixin in cls.mixins():
         if not issubclass(mixin, Mixin):
             continue
-        fields.extend(f.descriptor() for f in mixin.fields() if isinstance(f, Field))
         edges.extend(e.descriptor() for e in mixin.edges() if isinstance(e, Edge))
         indexes.extend(i.descriptor() for i in mixin.indexes() if isinstance(i, Index))
 
-    fields.extend(f.descriptor() for f in cls.fields() if isinstance(f, Field))
+    merged_fields = _collect_fields(cls)
     edges.extend(e.descriptor() for e in cls.edges() if isinstance(e, Edge))
     indexes.extend(i.descriptor() for i in cls.indexes() if isinstance(i, Index))
-
-    seen: dict[str, int] = {}
-    merged_fields = []
-    for f in fields:
-        if f.name in seen:
-            merged_fields[seen[f.name]] = f
-        else:
-            seen[f.name] = len(merged_fields)
-            merged_fields.append(f)
 
     return NodeDescriptor(
         name=cls.type_name(),

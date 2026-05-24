@@ -25,16 +25,16 @@ from examples.demos.relational.seed import seed
 
 with bind("sqlite:///:memory:", schemas=SCHEMAS):
     migrate()
-    seed()
+    ids = seed()
 
     # 简单查询
     for a in Article.query(status="published").all():
         print(a.title)
 
-    # 复杂查询
+    # 复杂查询（author_id 为 UUID，与 Author.id 一致）
     rows = (
         Article.query(status="published")
-        .where(F(Article).author_id.eq(1))
+        .where(F(Article).author_id.eq(ids["author_us"]))
         .all()
     )
 
@@ -70,13 +70,15 @@ with bind("sqlite:///:memory:", schemas=SCHEMAS):
 | 未保存实例 | `Article.new(...)` → `.save()` |
 | 等值查询 | `Article.query(status="published")` |
 | 复杂条件 | `.where(F(Article).field.op(val))` |
-| 单条 | `Article.get(id=1)` |
+| 单条 | `Article.get(title="...")` 或 `Article.get(id=uuid)` |
 | 谓词 | `F(Schema).field.eq / gt / in_` |
 
 ## 数据模型
 
+所有实体继承 `BaseSchema`（`id` UUID、`create_time`、`delete_time` 可选）：
+
 | 表 | 关键字段 |
 |----|----------|
-| `authors` | name, region |
-| `articles` | title, body, status, **author_id** |
-| `comments` | body, rating, **article_id** |
+| `authors` | id, create_time, name, region |
+| `articles` | id, create_time, title, body, status, **author_id** (UUID FK) |
+| `comments` | id, create_time, body, rating, **article_id** (UUID FK) |

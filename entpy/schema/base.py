@@ -3,13 +3,23 @@
 from __future__ import annotations
 
 from abc import ABC
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
+from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
     from entpy.schema.edge import Edge
     from entpy.schema.field import Field
     from entpy.schema.index import Index
     from entpy.schema.search import SearchConfig
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _new_uuid() -> UUID:
+    return uuid4()
 
 
 class Schema(ABC):
@@ -50,6 +60,20 @@ class Schema(ABC):
     @classmethod
     def annotations(cls) -> list[Any]:
         return []
+
+
+class BaseSchema(Schema):
+    """实体抽象基类：UUID 主键 + 创建/软删除时间戳。"""
+
+    @classmethod
+    def fields(cls) -> list[Field]:
+        from entpy.schema import field
+
+        return [
+            field.uuid("id").default_func(_new_uuid).immutable().unique(),
+            field.time("create_time").default_func(_utcnow).immutable(),
+            field.time("delete_time").optional(),
+        ]
 
 
 class View(Schema):

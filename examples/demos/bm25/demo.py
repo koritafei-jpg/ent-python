@@ -43,6 +43,9 @@ def main() -> None:
         for s in Section.query(document_id=doc.id).all():
             print(f"  section id={s.id} heading={s.heading}")
 
+        print("\n=== 6. BaseSchema 时间戳 ===")
+        print(f"  doc create_time={doc.create_time} delete_time={doc.delete_time}")
+
 
 if __name__ == "__main__":
     main()

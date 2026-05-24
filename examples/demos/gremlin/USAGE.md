@@ -23,11 +23,13 @@ python -m examples.demos.gremlin.demo
 
 ## 数据模型
 
+顶点继承 `BaseSchema`：`id`（UUID 属性）、`create_time`、`delete_time`（可选）。Gremlin 存储下 `Entity.id` 为图顶点 id；属性 FK 使用 UUID 类型字段。
+
 | 顶点 | 字段 | 边 / FK |
 |------|------|---------|
-| `persons` | name, city | `person_knows` → Person |
-| `posts` | title, topic, **author_id** | — |
-| `comments` | text, **post_id** | — |
+| `persons` | id, create_time, name, city | `person_knows` → Person |
+| `posts` | title, topic, **author_id** (UUID) | — |
+| `comments` | text, **post_id** (UUID) | — |
 
 ## 初始化
 

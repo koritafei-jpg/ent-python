@@ -11,7 +11,7 @@ from entpy.schema.base import Schema, View
 
 
 class ActiveSchema:
-    """混入：`class User(ActiveSchema, Schema)`，需在 `with entpy.active.bind(...):` 内使用。"""
+    """混入：`class User(ActiveSchema, BaseSchema)`，需在 `with entpy.active.bind(...):` 内使用。"""
 
     @classmethod
     def create(cls, /, **fields: Any) -> ActiveEntity:

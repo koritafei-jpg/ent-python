@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from entpy.schema import Schema, SearchMixin, edge, field
+from entpy.schema import BaseSchema, SearchMixin, edge, field
 from entpy.schema.search import FullText, Hybrid, SearchConfig, VectorIndex
 
 
-class Chunk(SearchMixin, Schema):
+class Chunk(SearchMixin, BaseSchema):
     @classmethod
     def fields(cls):
         return [

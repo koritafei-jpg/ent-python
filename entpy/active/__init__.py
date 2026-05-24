@@ -1,6 +1,23 @@
 """Active Record API：通过 bind() 上下文绑定数据库连接。"""
 
-from entpy.active.bind import async_bind, bind, migrate, migrate_async
+from entpy.active.bind import (
+    async_bind,
+    async_bind_client,
+    bind,
+    bind_client,
+    migrate,
+    migrate_async,
+)
+from entpy.runtime.connect import (
+    ConnectRequest,
+    ConnectionHook,
+    callable_connection_hook,
+    clear_connection_hooks,
+    config_from_env,
+    load_config,
+    register_connection_hook,
+    resolve_connection,
+)
 from entpy.active.context import get_async_client, get_bound_client, get_client
 from entpy.active.entity import ActiveEntity
 from entpy.active.gremlin import clear_graph, ensure_connection
@@ -31,16 +48,26 @@ def update(schema: type[Schema], id: int):
 __all__ = [
     "ActiveEntity",
     "ActiveSchema",
+    "ConnectRequest",
+    "ConnectionHook",
     "F",
     "async_bind",
+    "async_bind_client",
     "bind",
+    "bind_client",
+    "callable_connection_hook",
+    "clear_connection_hooks",
     "clear_graph",
+    "config_from_env",
     "ensure_connection",
     "get_async_client",
     "get_bound_client",
     "get_client",
+    "load_config",
     "migrate",
     "migrate_async",
+    "register_connection_hook",
+    "resolve_connection",
     "search",
     "traverse",
     "update",

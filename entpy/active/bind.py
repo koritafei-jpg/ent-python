@@ -7,70 +7,193 @@ from typing import Any, AsyncIterator, Iterator, Literal
 
 from entpy.runtime.async_client import AsyncClient
 from entpy.runtime.client import Client
+from entpy.runtime.connect import (
+    ConnectRequest,
+    ConnectionHook,
+    resolve_connection,
+)
 from entpy.schema.base import Schema
 
 Lifecycle = Literal["request", "app"]
 
 
+def _parse_config(
+    config: dict[str, Any] | str | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if config is None:
+        return None, None
+    if isinstance(config, str):
+        return None, config
+    return config, None
+
+
+def _make_request(
+    *,
+    schemas: list[type[Schema]],
+    async_: bool,
+    dsn: str | None,
+    storage: str,
+    config: dict[str, Any] | str | None,
+    client: Any | None,
+    owns_connection: bool,
+    observer_packages: list[str] | None,
+    hooks: list[Any] | None,
+    ctx: dict[str, Any] | None,
+    source: str | None,
+    env_prefix: str,
+    engine_kw: dict[str, Any],
+) -> ConnectRequest:
+    cfg_dict, cfg_path = _parse_config(config)
+    return ConnectRequest(
+        schemas=schemas,
+        async_=async_,
+        dsn=dsn,
+        storage=storage,
+        config=cfg_dict,
+        config_path=cfg_path,
+        env_prefix=env_prefix,
+        client=client,
+        owns_connection=owns_connection,
+        observer_packages=observer_packages,
+        runtime_hooks=hooks,
+        ctx=ctx,
+        engine_kw=engine_kw,
+        source=source,
+    )
+
+
 @contextmanager
 def bind(
-    dsn: str,
+    dsn: str | None = None,
     *,
     schemas: list[type[Schema]],
     storage: str = "sql",
+    config: dict[str, Any] | str | None = None,
+    client: Client | None = None,
+    owns_connection: bool | None = None,
+    connection_hooks: list[ConnectionHook] | None = None,
+    source: str | None = None,
+    env_prefix: str = "ENTPY_",
     observer_packages: list[str] | None = None,
     hooks: list[Any] | None = None,
     ctx: dict[str, Any] | None = None,
     lifecycle: Lifecycle = "request",
     **engine_kw: Any,
 ) -> Iterator[Client]:
-    """绑定同步 Client；块内使用 User.create / User.query。
+    """绑定同步 Client；块内使用 ``User.create`` / ``User.query``。
 
-    ``lifecycle="request"``（默认）：退出时释放连接，适合脚本与测试。
-    ``lifecycle="app"``：仅解除 ContextVar，连接由 ``Client.close()`` 释放，适合长驻进程。
+    连接方式（按钩子链匹配，任选其一）：
+
+    - **DSN**：``bind("sqlite:///:memory:", schemas=...)``
+    - **配置**：``bind(config={"dsn": "..."}, ...)`` 或 ``bind(config="db.json", ...)``
+    - **环境变量**：``bind(schemas=..., source="env")``（需 ``ENTPY_DSN``）
+    - **已有 Client**：``bind(client=app_client, schemas=..., owns_connection=False)``
+    - **自定义钩子**：``register_connection_hook`` 或 ``connection_hooks=[...]``
+
+    ``lifecycle="request"``（默认）：退出时释放连接（``owns_connection=True`` 时）。
+    ``lifecycle="app"``：仅解除 ContextVar，连接由 ``Client.close()`` 释放。
     """
-    client = Client.open(
-        dsn,
+    owns = owns_connection if owns_connection is not None else client is None
+    request = _make_request(
         schemas=schemas,
+        async_=False,
+        dsn=dsn,
         storage=storage,
+        config=config,
+        client=client,
+        owns_connection=owns,
         observer_packages=observer_packages,
+        hooks=hooks,
         ctx=ctx,
-        **engine_kw,
+        source=source,
+        env_prefix=env_prefix,
+        engine_kw=engine_kw,
     )
+    resolved = resolve_connection(request, extra_hooks=connection_hooks)
+    with resolved.scope():
+        yield resolved
+    if lifecycle == "request" and request.owns_connection:
+        resolved.close()
+
+
+@contextmanager
+def bind_client(
+    client: Client,
+    *,
+    ctx: dict[str, Any] | None = None,
+    hooks: list[Any] | None = None,
+    lifecycle: Lifecycle = "app",
+    close_on_exit: bool = False,
+) -> Iterator[Client]:
+    """绑定已有 ``Client``（``with`` 钩子方式），适合应用级连接池。
+
+    默认 ``lifecycle="app"`` 且不在退出时 ``close()``；测试可设 ``close_on_exit=True``。
+    """
     if hooks:
         client._hooks = list(hooks) + list(client._hooks)
-    with client.scope():
+    with client.scope(ctx=ctx):
         yield client
-    if lifecycle == "request":
+    if lifecycle == "request" or close_on_exit:
         client.close()
 
 
 @asynccontextmanager
 async def async_bind(
-    dsn: str,
+    dsn: str | None = None,
     *,
     schemas: list[type[Schema]],
     storage: str = "sql",
+    config: dict[str, Any] | str | None = None,
+    client: AsyncClient | None = None,
+    owns_connection: bool | None = None,
+    connection_hooks: list[ConnectionHook] | None = None,
+    source: str | None = None,
+    env_prefix: str = "ENTPY_",
     observer_packages: list[str] | None = None,
     hooks: list[Any] | None = None,
     ctx: dict[str, Any] | None = None,
     lifecycle: Lifecycle = "request",
     **engine_kw: Any,
 ) -> AsyncIterator[AsyncClient]:
-    """绑定异步 Client；块内使用 await client.create(...).save()。"""
-    client = AsyncClient.open(
-        dsn,
+    """绑定异步 Client；连接解析方式与 ``bind`` 相同。"""
+    owns = owns_connection if owns_connection is not None else client is None
+    request = _make_request(
         schemas=schemas,
+        async_=True,
+        dsn=dsn,
         storage=storage,
+        config=config,
+        client=client,
+        owns_connection=owns,
         observer_packages=observer_packages,
+        hooks=hooks,
         ctx=ctx,
-        **engine_kw,
+        source=source,
+        env_prefix=env_prefix,
+        engine_kw=engine_kw,
     )
+    resolved = resolve_connection(request, extra_hooks=connection_hooks)
+    async with resolved.ascope():
+        yield resolved
+    if lifecycle == "request" and request.owns_connection:
+        await resolved.aclose()
+
+
+@asynccontextmanager
+async def async_bind_client(
+    client: AsyncClient,
+    *,
+    ctx: dict[str, Any] | None = None,
+    hooks: list[Any] | None = None,
+    lifecycle: Lifecycle = "app",
+    close_on_exit: bool = False,
+) -> AsyncIterator[AsyncClient]:
+    """绑定已有 ``AsyncClient``。"""
     if hooks:
         client._hooks = list(hooks) + list(client._hooks)
-    async with client.ascope():
+    async with client.ascope(ctx=ctx):
         yield client
-    if lifecycle == "request":
+    if lifecycle == "request" or close_on_exit:
         await client.aclose()
 
 

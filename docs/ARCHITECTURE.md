@@ -395,10 +395,20 @@ flowchart TB
 | 场景 | 用法 | 框架行为 |
 |------|------|----------|
 | 脚本 / 测试 / 单次任务 | `with bind(dsn, schemas=..., lifecycle="request"):`（默认） | 块内 `client.scope()` 绑定 ContextVar；退出时 `client.close()` 释放连接 |
-| Web / 长驻进程 | `app = Client.open(...)`；每请求 `with app.scope(ctx=...):` | 连接池在进程内复用；`scope` 只切换 ContextVar 与可选 `ctx`，不 dispose |
+| Web / 长驻进程 | `app = Client.open(...)`；每请求 `with app.scope(ctx=...):` 或 `bind_client(app)` | 连接池在进程内复用；`scope` 只切换 ContextVar 与可选 `ctx`，不 dispose |
 | 显式释放 | `client.close()` / `await client.aclose()` | Gremlin 关闭远程连接；SQL `engine.dispose()` |
 
 `async_bind(..., lifecycle="request"|"app")` 与同步 `bind` 对称，异步侧用 `ascope()`。
+
+**连接钩子**（`entpy/runtime/connect.py`）：`bind` / `async_bind` 通过可插拔钩子解析连接，内置方式包括：
+
+| 方式 | 示例 |
+|------|------|
+| DSN | `bind("sqlite:///:memory:", schemas=...)` |
+| 配置 dict / JSON 文件 | `bind(config={"dsn": "..."}, ...)`、`bind(config="db.json", ...)` |
+| 环境变量 | `bind(schemas=..., source="env")`（`ENTPY_DSN` 等） |
+| 已有 Client | `bind(client=app, schemas=..., owns_connection=False)`、`bind_client(app)` |
+| 自定义 | `register_connection_hook(hook)` 或 `bind(..., connection_hooks=[...])` |
 
 ### 14.2 请求上下文与事务（P0–P1）
 

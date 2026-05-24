@@ -39,11 +39,23 @@ def _is_noop_update(fields: dict[str, Any], edges: dict[str, list[Any]]) -> bool
 
 
 def _load_existing_entity(client: Any, schema: type[Schema], row_id: Any) -> Entity:
+    import inspect
+
+    from entpy.runtime.driver_util import is_async_client
+
+    if is_async_client(client):
+        raise RuntimeError(
+            "_load_existing_entity() is sync-only; use _load_existing_entity_async()"
+        )
     existing = (
         client.query(schema)
         .where(client.F(schema).id.eq(row_id))
         .first()
     )
+    if inspect.iscoroutine(existing):
+        raise RuntimeError(
+            "query().first() returned a coroutine — use async save() with AsyncClient"
+        )
     if existing is None:
         raise NotFoundError(f"{schema.type_name()}: not found")
     return existing

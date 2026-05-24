@@ -402,6 +402,21 @@ def test_entql_or_has_gremlin_fn():
 
 
 @pytest.mark.asyncio
+async def test_async_empty_update_noop_returns_entity_not_coroutine():
+    from entpy.active import async_bind, migrate_async
+    from entpy.active.context import get_async_client
+
+    async with async_bind("sqlite+aiosqlite:///:memory:", schemas=SCHEMAS):
+        await migrate_async()
+        u = await get_async_client().create(User, name="noop", age=1).save()
+        row = await get_async_client().update(User, u.id).save()
+        import inspect
+
+        assert not inspect.iscoroutine(row)
+        assert row.name == "noop"
+
+
+@pytest.mark.asyncio
 async def test_traverse_update_module_api_rejects_async_bind():
     from entpy.active import async_bind, migrate_async, traverse, update
     from entpy.active.context import get_async_client

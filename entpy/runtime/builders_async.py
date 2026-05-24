@@ -14,7 +14,6 @@ from entpy.runtime.builders import (
     UpdateBuilder,
     _is_gremlin,
     _is_noop_update,
-    _load_existing_entity,
 )
 from entpy.runtime.entity import Entity
 from entpy.runtime.errors import NotFoundError
@@ -72,6 +71,19 @@ class AsyncCreateBuilder(CreateBuilder):
         return Entity(self._schema, row_data, self._client)
 
 
+async def _load_existing_entity_async(
+    client: Any, schema: type[Schema], row_id: Any
+) -> Entity:
+    existing = await (
+        client.query(schema)
+        .where(client.F(schema).id.eq(row_id))
+        .first()
+    )
+    if existing is None:
+        raise NotFoundError(f"{schema.type_name()}: not found")
+    return existing
+
+
 class AsyncUpdateBuilder(UpdateBuilder):
     async def save(self) -> Entity:
         reject_immutable_updates(self._client._registry, self._schema, self._fields)
@@ -91,7 +103,9 @@ class AsyncUpdateBuilder(UpdateBuilder):
 
         eval_mutation(get_effective_ctx(self._client), self._client._policies, mutation)
         if _is_noop_update(self._fields, self._edges):
-            return _load_existing_entity(self._client, self._schema, self._id)
+            return await _load_existing_entity_async(
+                self._client, self._schema, self._id
+            )
         spec = update_spec(self._client._registry, self._schema, self._id, self._fields, self._edges)
         if _is_gremlin(self._client):
             from entpy.dialect.gremlin import graph_ops

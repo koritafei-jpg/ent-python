@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, Awaitable, Callable
 
 from entpy.dialect.sqlalchemy import sqlgraph_async
 from entpy.dialect.sqlalchemy.sqlgraph import can_traverse_chain_sql, traverse_chain_sql
@@ -12,8 +12,6 @@ from entpy.runtime import traverse_core as tc
 from entpy.runtime.entity import Entity
 from entpy.runtime.predicate import Predicate
 from entpy.schema.base import Schema
-
-T = TypeVar("T")
 
 
 @dataclass
@@ -193,6 +191,21 @@ def _neighbor_ids_for_filter(entities: list[Entity]) -> list[Any]:
     return [e.id for e in entities]
 
 
+def _filter_neighbor_query(
+    state: TraverseState,
+    ids: list[Any],
+    peer_schema: type[Schema],
+) -> Any:
+    qb = state.client.query(peer_schema).where(
+        state.client.F(peer_schema).id.in_(ids)
+    )
+    for pred in state.predicates:
+        qb = qb.where(pred)
+    if state.limit is not None:
+        qb = qb.limit(state.limit)
+    return qb
+
+
 def filter_entities_sync(
     state: TraverseState,
     entities: list[Entity],
@@ -204,14 +217,7 @@ def filter_entities_sync(
     ids = _neighbor_ids_for_filter(entities)
     if not ids:
         return []
-    qb = state.client.query(peer_schema).where(
-        state.client.F(peer_schema).id.in_(ids)
-    )
-    for pred in state.predicates:
-        qb = qb.where(pred)
-    if state.limit is not None:
-        qb = qb.limit(state.limit)
-    return qb.all()
+    return _filter_neighbor_query(state, ids, peer_schema).all()
 
 
 async def filter_entities_async(
@@ -224,14 +230,7 @@ async def filter_entities_async(
     ids = _neighbor_ids_for_filter(entities)
     if not ids:
         return []
-    qb = state.client.query(peer_schema).where(
-        state.client.F(peer_schema).id.in_(ids)
-    )
-    for pred in state.predicates:
-        qb = qb.where(pred)
-    if state.limit is not None:
-        qb = qb.limit(state.limit)
-    return await qb.all()
+    return await _filter_neighbor_query(state, ids, peer_schema).all()
 
 
 def _finalize_result(state: TraverseState, entities: list[Entity]) -> list[Any]:

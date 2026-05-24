@@ -1,4 +1,4 @@
-"""sqlgraph 异步实现（读路径原生 await；写路径复杂逻辑仍 run_sync）。"""
+"""sqlgraph 异步实现（读/写边与批量更新原生 await；多跳 JOIN 仍 run_sync）。"""
 
 from __future__ import annotations
 
@@ -8,28 +8,112 @@ from sqlalchemy import delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from entpy.dialect.sqlalchemy import sqlgraph
-from entpy.dialect.sqlalchemy.spec import CreateSpec, DeleteSpec, QuerySpec, UpdateSpec
+from entpy.dialect.sqlalchemy.spec import CreateSpec, DeleteSpec, EdgeSpec, QuerySpec, UpdateSpec
+from entpy.schema.edge import RelType
+
+
+def _dialect_name(session: AsyncSession) -> str:
+    bind = session.get_bind()
+    return bind.dialect.name if bind is not None else ""
+
+
+async def _insert_m2m_row_async(
+    session: AsyncSession, jt: Any, values: dict[str, Any]
+) -> None:
+    dialect_name = _dialect_name(session)
+    if dialect_name == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert as dialect_insert
+
+        await session.execute(
+            dialect_insert(jt).values(values).on_conflict_do_nothing()
+        )
+    elif dialect_name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as dialect_insert
+
+        await session.execute(
+            dialect_insert(jt).values(values).on_conflict_do_nothing()
+        )
+    else:
+        await session.execute(insert(jt).values(values))
+
+
+async def _apply_edge_o2o_fk_async(
+    session: AsyncSession, tables: dict, src_id: Any, edge: EdgeSpec
+) -> None:
+    peer = tables[edge.peer_table]
+    fk = edge.fk_columns[0]
+    fk_attr = getattr(peer.c, fk)
+    clear = update(peer).where(fk_attr == src_id)
+    if edge.ids:
+        clear = clear.where(~peer.c.id.in_(edge.ids))
+    await session.execute(clear.values({fk: None}))
+    if edge.ids:
+        await session.execute(
+            update(peer).where(peer.c.id.in_(edge.ids)).values({fk: src_id})
+        )
+
+
+async def _replace_m2m_edges_async(
+    session: AsyncSession, tables: dict, src_id: Any, edge: EdgeSpec
+) -> None:
+    jt = tables[edge.join_table]
+    peer_col, owner_col = edge.join_columns
+    await session.execute(
+        delete(jt).where(getattr(jt.c, owner_col) == src_id)
+    )
+    for tid in edge.ids:
+        await _insert_m2m_row_async(
+            session, jt, {owner_col: src_id, peer_col: tid}
+        )
+
+
+async def _apply_edge_on_create_async(
+    session: AsyncSession, tables: dict, src_id: Any, edge: EdgeSpec
+) -> None:
+    if not edge.ids:
+        return
+    if edge.rel == RelType.M2M and edge.join_table:
+        jt = tables[edge.join_table]
+        peer_col, owner_col = edge.join_columns
+        for tid in edge.ids:
+            await _insert_m2m_row_async(
+                session, jt, {owner_col: src_id, peer_col: tid}
+            )
+        return
+    if edge.rel == RelType.O2O and edge.fk_columns:
+        await _apply_edge_o2o_fk_async(session, tables, src_id, edge)
+        return
+    if edge.rel in (RelType.O2M, RelType.M2O) and edge.fk_columns:
+        peer = tables[edge.peer_table]
+        fk = edge.fk_columns[0]
+        await session.execute(
+            update(peer).where(peer.c.id.in_(edge.ids)).values({fk: src_id})
+        )
+
+
+async def _apply_edges_on_update_async(
+    session: AsyncSession, tables: dict, src_id: Any, edge: EdgeSpec
+) -> None:
+    if edge.rel == RelType.M2M and edge.join_table and edge.replace:
+        await _replace_m2m_edges_async(session, tables, src_id, edge)
+    elif edge.rel == RelType.O2O and edge.fk_columns:
+        await _apply_edge_o2o_fk_async(session, tables, src_id, edge)
+    else:
+        await _apply_edge_on_create_async(session, tables, src_id, edge)
 
 
 async def create_node(session: AsyncSession, tables: dict, spec: CreateSpec) -> Any:
-    """INSERT 原生 await；边写入复用同步 ``_apply_edge_on_create``（单次 run_sync）。"""
+    """INSERT 与边写入均为原生 await（不占用线程池）。"""
     table = tables[spec.table]
     stmt = insert(table).values(**spec.fields)
-    bind = session.get_bind()
-    dialect_name = bind.dialect.name if bind is not None else ""
-    if dialect_name == "sqlite":
+    if _dialect_name(session) == "sqlite":
         result = await session.execute(stmt)
         row_id = result.inserted_primary_key[0]
     else:
         result = await session.execute(stmt.returning(table.c.id))
         row_id = result.scalar_one()
-    if spec.edges:
-
-        def _apply_edges(sync_session) -> None:
-            for edge in spec.edges:
-                sqlgraph._apply_edge_on_create(sync_session, tables, row_id, edge)
-
-        await session.run_sync(_apply_edges)
+    for edge in spec.edges:
+        await _apply_edge_on_create_async(session, tables, row_id, edge)
     return row_id
 
 
@@ -59,13 +143,8 @@ async def update_node(session: AsyncSession, tables: dict, spec: UpdateSpec) -> 
             return None
         row = dict(mapped)
 
-    if spec.edges:
-
-        def _apply_edges(sync_session) -> None:
-            for edge in spec.edges:
-                sqlgraph._apply_edges_on_update(sync_session, tables, spec.id, edge)
-
-        await session.run_sync(_apply_edges)
+    for edge in spec.edges:
+        await _apply_edges_on_update_async(session, tables, spec.id, edge)
     return row
 
 
@@ -180,9 +259,17 @@ async def batch_update_fields(
     table_name: str,
     updates: list[tuple[Any, dict[str, Any]]],
 ) -> int:
-    return await session.run_sync(
-        lambda s: sqlgraph.batch_update_fields(s, tables, table_name, updates)
-    )
+    if not updates:
+        return 0
+    table = tables[table_name]
+    count = 0
+    for row_id, fields in updates:
+        if not fields:
+            continue
+        stmt = update(table).where(table.c.id == row_id).values(**fields)
+        await session.execute(stmt)
+        count += 1
+    return count
 
 
 async def load_neighbors_sql(

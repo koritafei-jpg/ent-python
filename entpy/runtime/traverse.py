@@ -5,16 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from entpy.dialect.sqlalchemy import sqlgraph_async
-from entpy.dialect.sqlalchemy.sqlgraph import (
-    can_traverse_chain_sql,
-    load_neighbors_sql,
-    load_neighbors_sql_batch,
-    traverse_chain_sql,
-)
+from entpy.dialect.sqlalchemy.sqlgraph import load_neighbors_sql, load_neighbors_sql_batch
 from entpy.ir.graph import ResolvedEdge
 from entpy.runtime.entity import Entity
 from entpy.runtime.predicate import Predicate
 from entpy.runtime import traverse_core as tc
+from entpy.runtime.traverse_exec import TraverseState, run_all_async, run_all_sync
 from entpy.schema.base import Schema
 
 
@@ -240,6 +236,17 @@ class _TraverseChainBase:
             self._resolved_hops_cache,
         )
 
+    def _state(self) -> TraverseState:
+        return TraverseState(
+            client=self._client,
+            entity=self._entity,
+            hops=self._hops,
+            predicates=self._predicates,
+            limit=self._limit,
+            project_field=self._project_field,
+            resolved_cache=self._resolved_hops_cache,
+        )
+
 
 class TraverseChain(_TraverseChainBase):
     def out(self, edge_name: str) -> TraverseChain:
@@ -280,106 +287,16 @@ class TraverseChain(_TraverseChainBase):
             qb = qb.limit(self._limit)
         return qb.all()
 
-    def _finish(self, entities: list[Entity], peer_schema: type[Schema]) -> list[Any]:
-        return tc.finish_entities(
-            entities,
-            peer_schema,
-            client=self._client,
-            predicates=self._predicates,
-            limit=self._limit,
-            project_field=self._project_field,
+    def all(self) -> list[Any]:
+        state = self._state()
+        return run_all_sync(
+            state,
+            hop_single=lambda: _hop_neighbors(
+                self._client, self._entity, self._hops[0]
+            ),
+            hop_batch=_hop_neighbors_batch,
             filter_entities=self._filter_entities,
         )
-
-    def _sql_fast_path(self) -> list[Any] | None:
-        if self._client._driver.dialect() == "gremlin" or self._predicates:
-            return None
-        if len(self._hops) < 2:
-            return None
-        resolved = self._resolve_hops()
-        if not can_traverse_chain_sql(resolved):
-            return None
-        peer_schema = resolved[-1].peer.schema_type
-        owner_table = self._client._registry.label_for(self._entity._schema)
-        tables = self._client._registry.tables
-        try:
-            with self._client._driver.session() as session:
-                if self._project_field:
-                    return traverse_chain_sql(
-                        session,
-                        tables,
-                        owner_id=self._entity.id,
-                        owner_table=owner_table,
-                        edges=resolved,
-                        field=self._project_field,
-                        limit=self._limit,
-                    )
-                rows = traverse_chain_sql(
-                    session,
-                    tables,
-                    owner_id=self._entity.id,
-                    owner_table=owner_table,
-                    edges=resolved,
-                    limit=self._limit,
-                )
-                return [Entity(peer_schema, r, self._client) for r in rows]
-        except ValueError:
-            return None
-
-    def _gremlin_fast_path(self) -> list[Any] | None:
-        if self._client._driver.dialect() != "gremlin" or self._predicates:
-            return None
-        if len(self._hops) < 2:
-            return None
-        resolved = self._resolve_hops()
-        peer_schema = resolved[-1].peer.schema_type
-        with self._client._driver.session() as session:
-            from entpy.dialect.gremlin import graph_ops
-
-            owner_label = self._client._registry.label_for(self._entity._schema)
-            if self._project_field:
-                vals = graph_ops.traverse_chain_values(
-                    session.g,
-                    self._client._registry,
-                    owner_id=self._entity.id,
-                    owner_label=owner_label,
-                    edges=resolved,
-                    field=self._project_field,
-                )
-                if self._limit is not None:
-                    vals = vals[: self._limit]
-                return vals
-            rows = graph_ops.traverse_chain(
-                session.g,
-                self._client._registry,
-                owner_id=self._entity.id,
-                owner_label=owner_label,
-                edges=resolved,
-            )
-            entities = [Entity(peer_schema, r, self._client) for r in rows]
-            if self._limit is not None:
-                entities = entities[: self._limit]
-            return entities
-
-    def all(self) -> list[Any]:
-        fast = self._gremlin_fast_path()
-        if fast is not None:
-            return fast
-        fast = self._sql_fast_path()
-        if fast is not None:
-            if self._project_field:
-                return fast
-            return self._finish(fast, self._peer_schema())
-
-        resolved = self._resolve_hops()
-        peer_schema = resolved[-1].peer.schema_type
-        if len(self._hops) == 1:
-            entities = _hop_neighbors(self._client, self._entity, self._hops[0])
-            return self._finish(entities, peer_schema)
-        current = tc.walk_multi_hop(
-            self._entity, self._hops, _hop_neighbors_batch, self._client
-        )
-        return self._finish(current, peer_schema)
 
     def only(self) -> Entity:
         chain = self._branch()
@@ -431,121 +348,25 @@ class AsyncTraverseChain(_TraverseChainBase):
             qb = qb.limit(self._limit)
         return await qb.all()
 
-    async def _finish(
-        self, entities: list[Entity], peer_schema: type[Schema]
-    ) -> list[Any]:
-        filtered = await self._filter_entities(entities, peer_schema)
-        if self._limit is not None and not self._predicates:
-            filtered = filtered[: self._limit]
-        if self._project_field:
-            field = self._project_field
-            return [e._data.get(field) for e in filtered]
-        return filtered
-
-    async def _sql_fast_path(self) -> list[Any] | None:
-        if self._client._driver.dialect() == "gremlin" or self._predicates:
-            return None
-        if len(self._hops) < 2:
-            return None
-        resolved = self._resolve_hops()
-        if not can_traverse_chain_sql(resolved):
-            return None
-        peer_schema = resolved[-1].peer.schema_type
-        owner_table = self._client._registry.label_for(self._entity._schema)
-        tables = self._client._registry.tables
-        try:
-            async with self._client._driver.session() as session:
-                if self._project_field:
-                    return await sqlgraph_async.traverse_chain_sql(
-                        session,
-                        tables,
-                        owner_id=self._entity.id,
-                        owner_table=owner_table,
-                        edges=resolved,
-                        field=self._project_field,
-                        limit=self._limit,
-                    )
-                rows = await sqlgraph_async.traverse_chain_sql(
-                    session,
-                    tables,
-                    owner_id=self._entity.id,
-                    owner_table=owner_table,
-                    edges=resolved,
-                    limit=self._limit,
-                )
-                return [Entity(peer_schema, r, self._client) for r in rows]
-        except ValueError:
-            return None
-
-    async def _gremlin_fast_path(self) -> list[Any] | None:
-        if self._client._driver.dialect() != "gremlin" or self._predicates:
-            return None
-        if len(self._hops) < 2:
-            return None
-        resolved = self._resolve_hops()
-        peer_schema = resolved[-1].peer.schema_type
-        from entpy.dialect.gremlin import graph_ops
-
-        owner_label = self._client._registry.label_for(self._entity._schema)
-        if self._project_field:
-            vals = await self._client._driver.run(
-                lambda: graph_ops.traverse_chain_values(
-                    self._client._driver.g,
-                    self._client._registry,
-                    owner_id=self._entity.id,
-                    owner_label=owner_label,
-                    edges=resolved,
-                    field=self._project_field,
-                )
-            )
-            if self._limit is not None:
-                vals = vals[: self._limit]
-            return vals
-        rows = await self._client._driver.run(
-            lambda: graph_ops.traverse_chain(
-                self._client._driver.g,
-                self._client._registry,
-                owner_id=self._entity.id,
-                owner_label=owner_label,
-                edges=resolved,
-            )
-        )
-        entities = [Entity(peer_schema, r, self._client) for r in rows]
-        if self._limit is not None:
-            entities = entities[: self._limit]
-        return entities
-
     async def all(self) -> list[Any]:
-        fast = await self._gremlin_fast_path()
-        if fast is not None:
-            return fast
-        fast = await self._sql_fast_path()
-        if fast is not None:
-            if self._project_field:
-                return fast
-            return await self._finish(fast, self._peer_schema())
+        state = self._state()
 
-        resolved = self._resolve_hops()
-        peer_schema = resolved[-1].peer.schema_type
-        if len(self._hops) == 1:
-            entities = await _hop_neighbors_async(
+        async def hop_single():
+            return await _hop_neighbors_async(
                 self._client, self._entity, self._hops[0]
             )
-            return await self._finish(entities, peer_schema)
 
-        current: list[Entity] = [self._entity]
-        for edge_name in self._hops:
-            next_entities: list[Entity] = []
-            seen: set[Any] = set()
-            for neighbor in await _hop_neighbors_batch_async(
+        async def hop_batch(current: list[Entity], edge_name: str):
+            return await _hop_neighbors_batch_async(
                 self._client, current, edge_name
-            ):
-                if neighbor.id in seen:
-                    continue
-                seen.add(neighbor.id)
-                next_entities.append(neighbor)
-            current = next_entities
-        return await self._finish(current, peer_schema)
+            )
+
+        return await run_all_async(
+            state,
+            hop_single=hop_single,
+            hop_batch=hop_batch,
+            filter_entities=self._filter_entities,
+        )
 
     async def only(self) -> Entity:
         chain = self._branch()

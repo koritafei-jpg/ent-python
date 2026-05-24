@@ -470,7 +470,7 @@ flowchart TB
 | 谓词 | `entpy/runtime/predicate.py` |
 | Spec | `entpy/runtime/spec_helpers.py` |
 | 校验 / 脏字段 | `entpy/runtime/validation.py` |
-| 遍历 | `entpy/runtime/traverse.py`, `traverse_core.py` |
+| 遍历 | `entpy/runtime/traverse.py`, `traverse_core.py`, `traverse_exec.py`（统一快路径） |
 | Hook | `entpy/runtime/hook.py`, `hooks/embed_on_save.py` |
 | Interceptor | `entpy/runtime/interceptor.py`（`AsyncInterceptor` + `chain_interceptors_async`） |
 | Observer | `entpy/observer/hooks.py`, `discovery.py`, `integration.py` |

@@ -60,6 +60,18 @@ async def test_async_interceptor_chain_native():
         assert len(seen) == 1
 
 
+def test_traverse_exec_fast_path_sql_multihop():
+    with bind("sqlite:///:memory:", schemas=SCHEMAS):
+        migrate()
+        u = User.create(name="U", age=1)
+        from examples.start.models import Group
+
+        g = Group.create(name="g")
+        get_client().update(User, u.id).add("groups", g.id).save()
+        names = {x.name for x in u.out("groups").all()}
+        assert names == {"g"}
+
+
 def test_o2o_edge_update_replaces_exclusive_peer():
     """独占 O2O（Car.owner）更新时解除旧 peer 的 FK。"""
     with bind("sqlite:///:memory:", schemas=SCHEMAS):

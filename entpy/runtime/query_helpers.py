@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from entpy.active.context import get_effective_ctx
 from entpy.privacy.policy import eval_query
 from entpy.runtime.entity import Entity
 from entpy.runtime.errors import NotFoundError
@@ -37,6 +36,8 @@ def eval_and_fetch_entities(
     request: QueryRequest,
     fetch_rows: Callable[[QueryRequest], list[dict]],
 ) -> list[Entity]:
+    from entpy.active.context import get_effective_ctx
+
     eval_query(get_effective_ctx(client), policies, request)
     rows = fetch_rows(request)
     return [Entity(schema, r, client) for r in rows]
